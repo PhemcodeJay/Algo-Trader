@@ -3,9 +3,9 @@ import time
 import threading
 import logging
 from datetime import datetime, timedelta
+import bybit_client
 from engine import TradingEngine
 from utils import calculate_drawdown
-
 
 class AutomatedTrader:
     def __init__(self):
@@ -14,7 +14,7 @@ class AutomatedTrader:
         self.client = self.engine.client
         self.is_running = False
         self.automation_thread = None
-
+        self.bybitClient = bybit_client.BybitClient()
         self.signal_interval = int(self.db.get_setting("SCAN_INTERVAL") or 3600)
         self.max_signals = int(self.db.get_setting("TOP_N_SIGNALS") or 5)
         self.max_drawdown_limit = float(self.db.get_setting("MAX_DRAWDOWN") or 20)
@@ -127,16 +127,39 @@ class AutomatedTrader:
 
             setattr(trade, "_logged", True)
 
+    def get_available_capital(self) -> float:
+        try:
+            if self.bybitClient.use_real:
+                balance_info = self.bybitClient.get_wallet_balance()  # Adjust to match your Bybit client
+                return float(balance_info.get("available_balance", 0.0))
+            else:
+                with open("capital.json", "r") as f:
+                    data = json.load(f)
+                    return float(data.get("virtual", {}).get("available", 0.0))
+        except Exception as e:
+            self.logger.error(f"Failed to load capital: {e}")
+            return 0.0
+
+
     def automation_cycle(self):
+        start_time = datetime.now()
         while self.is_running:
             try:
                 now = datetime.now()
+
+                # Stop after 1 hour
+                if (now - start_time).total_seconds() >= 3600:
+                    self.logger.info("🕒 Automation session completed: 1 hour elapsed.")
+                    break
+
                 if not self.last_run_time or (now - self.last_run_time).total_seconds() >= self.signal_interval:
                     self.logger.info("⚙️ Starting automation cycle...")
 
                     if not self.check_risk_limits():
                         self.logger.info("⛔ Risk limits triggered. Sleeping for 1 hour with countdown.")
                         for remaining in range(60, 0, -1):  # 60 minutes
+                            if not self.is_running:
+                                break
                             self.logger.info(f"⏳ Sleeping... {remaining} minute(s) remaining.")
                             time.sleep(60)
                         continue
@@ -145,23 +168,25 @@ class AutomatedTrader:
                     valid_symbols = {s["symbol"] for s in self.client.get_symbols()}
                     top_signals = []
 
+                    # 🚀 Load capital at start of cycle
+                    capital = self.get_available_capital()
+
                     for signal in raw_signals:
                         symbol = signal.get("Symbol")
-                        margin_required = signal.get("margin_usdt", 5.0)
+                        margin_required = signal.get("margin_usdt")
 
+                        if not symbol:
+                            self.logger.warning("⚠️ Skipping signal with missing symbol.")
+                            continue
+                        if margin_required is None:
+                            self.logger.warning(f"⚠️ Skipping {symbol}: margin_required is None.")
+                            continue
                         if symbol not in valid_symbols:
                             self.logger.warning(f"⚠️ Skipping unknown symbol: {symbol}")
                             continue
-
-                        try:
-                            with open("capital.json", "r") as f:
-                                capital_data = json.load(f)
-                                capital = capital_data.get("virtual", {}).get("available", 0.0)
-                        except Exception as e:
-                            self.logger.error(f"Failed to load capital for automation: {e}")
-                            capital = 0.0
-
-
+                        if not isinstance(capital, (int, float)):
+                            self.logger.warning(f"⚠️ Skipping {symbol}: Capital is not numeric. Value: {capital}")
+                            continue
                         if capital < margin_required:
                             self.logger.warning(
                                 f"⚠️ Skipping {symbol}: Not enough capital. Needed: {margin_required}, Available: {capital}"
@@ -169,6 +194,7 @@ class AutomatedTrader:
                             continue
 
                         top_signals.append(signal)
+                        capital -= margin_required  # 🧠 Reserve capital after signal
 
                         if len(top_signals) >= self.max_signals:
                             break
@@ -187,6 +213,7 @@ class AutomatedTrader:
             except Exception as e:
                 self.logger.error(f"❌ Automation error: {e}", exc_info=True)
                 time.sleep(90)
+
 
     def start(self):
         if self.is_running:
@@ -235,5 +262,6 @@ class AutomatedTrader:
         self.max_position_pct = float(self.db.get_setting("MAX_POSITION_PCT") or 5)
 
 
+    
 # ✅ Singleton instance
 automated_trader = AutomatedTrader()

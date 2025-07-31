@@ -78,6 +78,6 @@ def render(trading_engine, dashboard, db_manager):
 
     with tab2:
         if virtual_trades:
-            dashboard.display_trade_table(virtual_trades)
+            dashboard.display_trades_table(virtual_trades)
         else:
             st.info("No virtual trades available.")
