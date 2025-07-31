@@ -102,23 +102,23 @@ class DashboardComponents:
 
     def display_trades_table(self, trades):
         df = pd.DataFrame([{
-            'Symbol': t.symbol,
-            'Side': t.side,
-            'Entry': f"${t.entry:.2f}" if t.entry is not None else "N/A",
-            'Exit': f"${t.exit:.2f}" if t.exit is not None else "N/A",
-            'Qty': f"{t.qty:,.2f}" if t.qty is not None else "N/A",
-            'Leverage': f"{t.leverage}x" if t.leverage is not None else "N/A",
-            'margin_usdt': f"${t.margin_usdt:.2f}" if t.margin_usdt is not None else "N/A",
-            'P&L': f"{'🟢' if (t.pnl or 0) > 0 else '🔴'} ${t.pnl:.2f}" if t.pnl is not None else "N/A",
-            'Duration': t.duration if t.duration is not None else "N/A",
-            'Strategy': t.strategy or "N/A",
-            'Virtual': '✅' if t.virtual else '❌',
-            'Timestamp': t.timestamp.strftime('%Y-%m-%d %H:%M:%S') if t.timestamp else "N/A"
+            'Symbol': t.get('symbol', 'N/A'),
+            'Side': t.get('side', 'N/A'),
+            'Entry': f"${t['entry']:.2f}" if t.get('entry') is not None else "N/A",
+            'Exit': f"${t['exit']:.2f}" if t.get('exit') is not None else "N/A",
+            'Qty': f"{t['qty']:,.2f}" if t.get('qty') is not None else "N/A",
+            'Leverage': f"{t['leverage']}x" if t.get('leverage') is not None else "N/A",
+            'margin_usdt': f"${t['margin_usdt']:.2f}" if t.get('margin_usdt') is not None else "N/A",
+            'P&L': f"{'🟢' if (t.get('pnl', 0) or 0) > 0 else '🔴'} ${t['pnl']:.2f}" if t.get('pnl') is not None else "N/A",
+            'Duration': t.get('duration', 'N/A'),
+            'Strategy': t.get('strategy', 'N/A'),
+            'Virtual': '✅' if t.get('virtual') else '❌',
+            'Timestamp': t['timestamp'].strftime('%Y-%m-%d %H:%M:%S') if t.get('timestamp') else "N/A"
         } for t in trades])
 
         st.dataframe(df, use_container_width=True, height=400)
 
-    from datetime import datetime
+
 
     def calculate_duration(self, trade):
         if trade.exit_price is not None:
