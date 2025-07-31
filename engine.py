@@ -373,10 +373,16 @@ class TradingEngine:
         return None
 
     def calculate_win_rate(self, trades):
-        valid_trades = [t for t in trades if isinstance(t.get('pnl'), (int, float))]
+        def get_pnl(trade):
+            if isinstance(trade, dict):
+                return trade.get("pnl")
+            return getattr(trade, "pnl", None)
+
+        valid_trades = [t for t in trades if isinstance(get_pnl(t), (int, float))]
         if not valid_trades:
             return 0.0
-        wins = [t for t in valid_trades if t.pnl > 0]
+
+        wins = [t for t in valid_trades if get_pnl(t) > 0]
         return round(len(wins) / len(valid_trades) * 100, 2)
 
 
@@ -398,8 +404,9 @@ class TradingEngine:
         losses = 0
 
         for t in trades:
-            pnl = t.get("pnl")
-            duration = t.get("duration_minutes", 0)
+            pnl = getattr(t, 'pnl', None)
+            duration = getattr(t, 'duration_minutes', 0)
+
 
             if isinstance(pnl, (int, float)):
                 total_pnl += pnl
