@@ -1,0 +1,5 @@
+/.env
+/bots
+/__pycache__
+views/__pycache__
+/reports
