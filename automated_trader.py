@@ -135,8 +135,10 @@ class AutomatedTrader:
                     self.logger.info("⚙️ Starting automation cycle...")
 
                     if not self.check_risk_limits():
-                        self.logger.info("⛔ Risk limits triggered. Sleeping 1hr.")
-                        time.sleep(3600)
+                        self.logger.info("⛔ Risk limits triggered. Sleeping for 1 hour with countdown.")
+                        for remaining in range(60, 0, -1):  # 60 minutes
+                            self.logger.info(f"⏳ Sleeping... {remaining} minute(s) remaining.")
+                            time.sleep(60)
                         continue
 
                     raw_signals = self.engine.run_once()
