@@ -171,14 +171,16 @@ class BybitClient:
             leverage = 20  # You can make this dynamic
             margin = self.calculate_margin(qty, price_used, leverage)
 
-            available_capital = self.virtual_wallet.get("available", 0)
+            
+            available_capital = self.virtual_wallet.get("virtual", {}).get("available", 0)
             if margin > available_capital:
                 logger.warning(f"[Virtual] ❌ Not enough capital. Needed: {margin}, Available: {available_capital}")
                 return {"error": "Insufficient virtual capital"}
 
-            # Deduct margin
-            self.virtual_wallet["available"] -= margin
-            self.virtual_wallet["used"] = self.virtual_wallet.get("used", 0) + margin
+            # Deduct margin from virtual wallet
+            self.virtual_wallet["virtual"]["available"] -= margin
+            self.virtual_wallet["virtual"]["used"] = self.virtual_wallet["virtual"].get("used", 0) + margin
+
             self._save_virtual_wallet()
 
             # --- Create virtual order ---

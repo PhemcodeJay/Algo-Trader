@@ -12,6 +12,19 @@ def render(trading_engine, dashboard):
     st.image("logo.png", width=80)
     st.title("📊 AI Trading Signals")
 
+    # Scan Options
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        symbol_limit = st.number_input("Symbols to Analyze", min_value=10, max_value=100, value=30)
+    with col2:
+        confidence_threshold = st.slider("Min Confidence %", 50, 95, 75)
+    with col3:
+        if st.button("🔍 Scan New Signals"):
+            with st.spinner("Analyzing markets..."):
+                new_signals = trading_engine.run_once()
+                st.success(f"Generated {len(new_signals)} signals")
+                st.rerun()
+
     # Load signals from DB using db_manager
     signal_objs = db.get_signals(limit=100)
 

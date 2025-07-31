@@ -66,7 +66,7 @@ class DashboardComponents:
             'Confidence': f"{s.get('score', 0)}%",
             'Leverage': f"{s.get('leverage', 20)}x",
             'Qty': f"{s.get('qty', 0):,.2f}",
-            'Margin USDT': f"${s.get('margin_usdt', 0):.2f}",
+            'margin_usdt': f"${s.get('margin_usdt', 0):.2f}",
             'Trend': s.get('trend', 'N/A'),
             'Timestamp': s.get('timestamp', 'N/A')
         } for s in signals])
@@ -108,7 +108,7 @@ class DashboardComponents:
             'Exit': f"${t.exit:.2f}" if t.exit is not None else "N/A",
             'Qty': f"{t.qty:,.2f}" if t.qty is not None else "N/A",
             'Leverage': f"{t.leverage}x" if t.leverage is not None else "N/A",
-            'Margin USDT': f"${t.margin_usdt:.2f}" if t.margin_usdt is not None else "N/A",
+            'margin_usdt': f"${t.margin_usdt:.2f}" if t.margin_usdt is not None else "N/A",
             'P&L': f"{'🟢' if (t.pnl or 0) > 0 else '🔴'} ${t.pnl:.2f}" if t.pnl is not None else "N/A",
             'Duration': t.duration if t.duration is not None else "N/A",
             'Strategy': t.strategy or "N/A",
@@ -258,17 +258,18 @@ class DashboardComponents:
                 symbol = item.get('symbol')
                 price = float(item.get('lastPrice', 0))
                 change = float(item.get('price24hPcnt', 0)) * 100
-                volume = float(item.get('turnover24h') or item.get('volume24h') or 0)
-                cleaned.append({'symbol': symbol, 'price': price, 'change': change, 'volume': volume})
+                volume = float(item.get("turnover24h") or item.get("volume24h") or 0)
+                formatted_volume = f"${volume:,.2f}"
+                cleaned.append({'symbol': symbol, 'price': price, 'change': change, 'volume': volume, 'formatted_volume': formatted_volume})
             except:
                 continue
 
-        top_50 = sorted(cleaned, key=lambda x: x['volume'], reverse=True)[:50]
+        top_20 = sorted(cleaned, key=lambda x: x['volume'], reverse=True)[:20]
         ticker_html = " | ".join([
             f"<b>{x['symbol']}</b>: ${x['price']:.6f} "
             f"(<span style='color:{'#00cc66' if x['change'] > 0 else '#ff4d4d'}'>{x['change']:.2f}%</span>) "
             f"Vol: {format_volume(x['volume'])}"
-            for x in top_50
+            for x in top_20
         ])
 
         if ticker_html:
