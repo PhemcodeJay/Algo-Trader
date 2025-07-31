@@ -72,7 +72,7 @@ def render(trading_engine, dashboard, db_manager):
 
     with tab1:
         if real_trades:
-            dashboard.display_trade_table(real_trades)
+            dashboard.display_trades_table(real_trades)
         else:
             st.info("No real trades available.")
 

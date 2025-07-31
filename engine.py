@@ -232,21 +232,26 @@ class TradingEngine:
 
     def run_loop(self):
         print("[Engine] ♻️ Starting scan loop...")
+
+        scan_interval = 3600  # 1 hour in seconds
+
         while True:
             try:
+                print("\n[Engine] 🚀 Running scan...")
                 self.run_once()
             except Exception as e:
-                print(f"[Engine] ❌ Error: {e}")
-            
-            scan_interval, _ = self.get_settings()
-            print(f"[Engine] ⏱️ Sleeping for {scan_interval} seconds...")
-            
+                print(f"[Engine] ❌ Error during scan: {e}")
+
+            print(f"[Engine] ⏱️ Countdown to next scan ({scan_interval // 60} minutes):")
+
             for remaining in range(scan_interval, 0, -1):
-                sys.stdout.write(f"\r[Engine] ⏳ {remaining} seconds remaining...")
+                # Convert seconds to hh:mm:ss format
+                time_str = str(timedelta(seconds=remaining))
+                sys.stdout.write(f"\r[Engine] ⏳ Time remaining: {time_str} ")
                 sys.stdout.flush()
                 time.sleep(1)
-            
-            print("\n[Engine] 🔁 Restarting scan...\n")
+
+            print("\n[Engine] 🔁 Restarting scan...")
 
 
     def get_recent_trades(self, limit=10):
