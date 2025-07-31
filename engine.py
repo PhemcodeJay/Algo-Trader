@@ -7,7 +7,7 @@ import json
 import logging
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
-
+from typing import Any, List, Union
 import db
 import signal_generator
 from signal_generator import get_usdt_symbols, analyze
@@ -372,8 +372,8 @@ class TradingEngine:
             return self.db.get_daily_pnl_pct()
         return None
 
-    def calculate_win_rate(self, trades):
-        def get_pnl(trade):
+    def calculate_win_rate(self, trades: List[Union[dict, Any]]) -> float:
+        def get_pnl(trade: Union[dict, Any]) -> Union[float, int, None]:
             if isinstance(trade, dict):
                 return trade.get("pnl")
             return getattr(trade, "pnl", None)
@@ -382,7 +382,12 @@ class TradingEngine:
         if not valid_trades:
             return 0.0
 
-        wins = [t for t in valid_trades if get_pnl(t) > 0]
+        wins = []
+        for t in valid_trades:
+            pnl = get_pnl(t)
+            if isinstance(pnl, (int, float)) and pnl > 0:
+                wins.append(t)
+
         return round(len(wins) / len(valid_trades) * 100, 2)
 
 
