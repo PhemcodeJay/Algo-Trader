@@ -17,7 +17,7 @@ def render(trading_engine, dashboard):
     with col1:
         symbol_limit = st.number_input("Symbols to Analyze", min_value=10, max_value=100, value=30)
     with col2:
-        confidence_threshold = st.slider("Min Confidence %", 50, 95, 75)
+        confidence_threshold = st.slider("Min Confidence %", 40, 95, 75)
     with col3:
         if st.button("🔍 Scan New Signals"):
             with st.spinner("Analyzing markets..."):
@@ -48,7 +48,7 @@ def render(trading_engine, dashboard):
         side_filter = st.multiselect("Filter by Side", ["LONG", "SHORT"], default=["LONG", "SHORT"])
 
     with col3:
-        min_score = st.slider("Minimum Score", 70, 100, 80)
+        min_score = st.slider("Minimum Score", 40, 100, 70)
 
     # Apply filters
     filtered_signals = [
