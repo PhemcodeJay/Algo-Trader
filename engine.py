@@ -301,14 +301,7 @@ class TradingEngine:
             return []
 
     def load_capital(self, mode: str = "all") -> dict:
-        """
-        Loads capital data based on mode: 'real', 'virtual', or 'all'.
-        Returns a dict like:
-        {
-            "real": {"capital": 100.0, "currency": "USD", "start_balance": 100.0},
-            "virtual": {"capital": 100.0, "currency": "USD", "start_balance": 100.0}
-        } or just one of the above if mode != "all"
-        """
+       
         result = {}
 
         if mode in ("all", "real"):
