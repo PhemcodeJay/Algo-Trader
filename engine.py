@@ -205,18 +205,32 @@ class TradingEngine:
                 print(f"[Engine] ⚠️ Skipping failed order for {signal.get('Symbol')}: {order}")
                 continue
 
+            # Validate critical fields from `order` and `signal`
+            required_order_fields = ["symbol", "side", "qty", "price", "order_id"]
+            required_signal_fields = ["SL", "TP", "leverage", "margin_usdt"]
+
+            missing_fields = [
+                key for key in required_order_fields if not order.get(key)
+            ] + [
+                key for key in required_signal_fields if not signal.get(key)
+            ]
+
+            if missing_fields:
+                raise ValueError(f"Missing required fields in trade_data: {missing_fields}")
+
+            # Construct trade_data
             trade_data = {
-                "symbol": order.get("symbol"),
-                "side": order.get("side"),
-                "qty": order.get("qty"),
-                "entry_price": order.get("price"),
-                "stop_loss": signal.get("SL"),
-                "take_profit": signal.get("TP"),
-                "leverage": signal.get("leverage"),
-                "margin_usdt": signal.get("margin_usdt"),
+                "symbol": order["symbol"],
+                "side": order["side"],
+                "qty": order["qty"],
+                "entry_price": order["price"],
+                "stop_loss": signal["SL"],
+                "take_profit": signal["TP"],
+                "leverage": signal["leverage"],
+                "margin_usdt": signal["margin_usdt"],
                 "status": "open",
-                "order_id": order.get("order_id"),
-                "timestamp": order.get("create_time", datetime.now(timezone.utc)),
+                "order_id": order["order_id"],
+                "timestamp": order.get("create_time") or datetime.now(timezone.utc),
                 "virtual": not is_real,
                 "exit_price": None,
                 "pnl": None,
