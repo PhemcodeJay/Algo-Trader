@@ -197,20 +197,25 @@ class TradingEngine:
                     time_in_force=signal.get("TIF", "GoodTillCancel"),
                 )
             except Exception as e:
-                print(f"[Engine] ❌ Order failed: {e}")
+                print(f"[Engine] ❌ Order failed for {signal.get('Symbol')}: {e}")
+                continue
+
+            # ✅ Handle failed order (returns None or dict with "error")
+            if not order or "symbol" not in order:
+                print(f"[Engine] ⚠️ Skipping failed order for {signal.get('Symbol')}: {order}")
                 continue
 
             trade_data = {
-                "symbol": order["symbol"],
-                "side": order["side"],
-                "qty": order["qty"],
-                "entry_price": order["price"],
+                "symbol": order.get("Symbol"),
+                "side": order.get("Side"),
+                "qty": order.get("Qty"),
+                "entry_price": order.get("Price"),
                 "stop_loss": signal.get("SL"),
                 "take_profit": signal.get("TP"),
                 "leverage": signal.get("leverage"),
                 "margin_usdt": signal.get("margin_usdt"),
                 "status": "open",
-                "order_id": order["order_id"],
+                "order_id": order.get("order_id"),
                 "timestamp": order.get("create_time", datetime.now(timezone.utc)),
                 "virtual": not is_real,
                 "exit_price": None,
@@ -229,6 +234,7 @@ class TradingEngine:
             self.client.monitor_virtual_orders()
 
         return top_signals
+
 
     def run_loop(self):
         print("[Engine] ♻️ Starting scan loop...")
