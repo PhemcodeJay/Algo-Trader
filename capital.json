@@ -1,12 +1,12 @@
 {
-  "real": {
-    "available": 100.0,
-    "used": 0.0,
-    "currency": "USDT"
-  },
-  "virtual": {
-    "available": 100.0,
-    "used": 0.0,
-    "currency": "USDT"
-  }
+    "real": {
+        "available": 100.0,
+        "used": 0.0,
+        "currency": "USDT"
+    },
+    "virtual": {
+        "available": 75.0,
+        "used": 25.0,
+        "currency": "USDT"
+    }
 }
