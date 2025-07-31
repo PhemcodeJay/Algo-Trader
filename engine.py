@@ -146,6 +146,12 @@ class TradingEngine:
             raw = analyze(symbol)
             if raw:
                 enhanced = self.ml.enhance_signal(raw)
+                # --- Enrich signal with required fields ---
+            if "leverage" not in enhanced or enhanced["leverage"] is None:
+                enhanced["leverage"] = 20  # Default leverage
+
+            if "margin_usdt" not in enhanced or enhanced["margin_usdt"] is None:
+                enhanced["margin_usdt"] = 5.0  # Default margin
                 print(
                     f"✅ ML Signal: {enhanced.get('Symbol')} "
                     f"({enhanced.get('Side')} @ {enhanced.get('Entry')}) → "
