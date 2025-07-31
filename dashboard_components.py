@@ -101,24 +101,38 @@ class DashboardComponents:
             )
 
     def display_trades_table(self, trades):
-        df = pd.DataFrame([{
-            'Symbol': t.get('symbol', 'N/A'),
-            'Side': t.get('side', 'N/A'),
-            'Entry': f"${t['entry']:.2f}" if t.get('entry') is not None else "N/A",
-            'Exit': f"${t['exit']:.2f}" if t.get('exit') is not None else "N/A",
-            'Qty': f"{t['qty']:,.2f}" if t.get('qty') is not None else "N/A",
-            'Leverage': f"{t['leverage']}x" if t.get('leverage') is not None else "N/A",
-            'margin_usdt': f"${t['margin_usdt']:.2f}" if t.get('margin_usdt') is not None else "N/A",
-            'P&L': f"{'🟢' if (t.get('pnl', 0) or 0) > 0 else '🔴'} ${t['pnl']:.2f}" if t.get('pnl') is not None else "N/A",
-            'Duration': t.get('duration', 'N/A'),
-            'Strategy': t.get('strategy', 'N/A'),
-            'Virtual': '✅' if t.get('virtual') else '❌',
-            'Timestamp': t['timestamp'].strftime('%Y-%m-%d %H:%M:%S') if t.get('timestamp') else "N/A"
-        } for t in trades])
+        def format_timestamp(ts):
+            if not ts:
+                return "N/A"
+            if isinstance(ts, str):
+                try:
+                    ts = datetime.strptime(ts, '%Y-%m-%d %H:%M:%S')
+                except ValueError:
+                    return ts  # Return as-is if it's already a readable string
+            return ts.strftime('%Y-%m-%d %H:%M:%S')
+
+        df = pd.DataFrame([
+            {
+                'Symbol': t.get('symbol', 'N/A'),
+                'Side': t.get('side', 'N/A'),
+                'Entry': f"${t['entry']:.2f}" if t.get('entry') is not None else "N/A",
+                'Exit': f"${t['exit']:.2f}" if t.get('exit') is not None else "N/A",
+                'Qty': f"{t['qty']:,.2f}" if t.get('qty') is not None else "N/A",
+                'Leverage': f"{t['leverage']}x" if t.get('leverage') is not None else "N/A",
+                'margin_usdt': f"${t['margin_usdt']:.2f}" if t.get('margin_usdt') is not None else "N/A",
+                'P&L': (
+                    f"{'🟢' if (t.get('pnl', 0) or 0) > 0 else '🔴'} ${t['pnl']:.2f}"
+                    if t.get('pnl') is not None else "N/A"
+                ),
+                'Duration': t.get('duration', 'N/A'),
+                'Strategy': t.get('strategy', 'N/A'),
+                'Virtual': '✅' if t.get('virtual') else '❌',
+                'Timestamp': format_timestamp(t.get('timestamp'))
+            }
+            for t in trades
+        ])
 
         st.dataframe(df, use_container_width=True, height=400)
-
-
 
     def calculate_duration(self, trade):
         if trade.exit_price is not None:
