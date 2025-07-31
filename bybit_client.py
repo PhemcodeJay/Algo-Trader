@@ -1,11 +1,9 @@
 import os
 import json
 import logging
-from symtable import Symbol
 import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Tuple, Union, List, cast
-from matplotlib.pyplot import margins
 import requests
 from requests.structures import CaseInsensitiveDict
 
@@ -132,6 +130,19 @@ class BybitClient:
         balance = data.get(coin, {}).get("available_balance", 100.0)
         return {"capital": float(balance), "currency": coin}
     
+    def get_wallet_balance(self) -> dict:
+        if self.use_real:
+            return self.get_balance("USDT")
+
+        wallet = self.virtual_wallet.get("virtual", {})
+        return {
+            "available": wallet.get("available", 0.0),
+            "used": wallet.get("used", 0.0),
+            "equity": wallet.get("available", 0.0) + wallet.get("used", 0.0),
+            "currency": self.virtual_wallet.get("currency", "USDT")
+        }
+
+    
     def calculate_margin(self, qty: float, price: float, leverage: float) -> float:
         return round((qty * price) / leverage, 2)
     
@@ -142,12 +153,11 @@ class BybitClient:
             logger.info("[BybitClient] 💾 Virtual wallet updated in capital.json")
         except Exception as e:
             logger.error(f"❌ Failed to save capital.json: {e}")
-            logger.info(f"[Virtual] Placed order for {Symbol}. Margin: {margins}, Remaining capital: {self.virtual_wallet['available']}")
-
+            
 
     def place_order(self, symbol: str, side: str, order_type: str, qty: float, price: Optional[float] = None,
-                    time_in_force: Optional[str] = "GoodTillCancel", reduce_only: bool = False,
-                    close_on_trigger: bool = False, order_link_id: Optional[str] = None) -> Dict[str, Any]:
+                time_in_force: Optional[str] = "GoodTillCancel", reduce_only: bool = False,
+                close_on_trigger: bool = False, order_link_id: Optional[str] = None) -> Dict[str, Any]:
         if self.use_real and self.client:
             params: Dict[str, Any] = {
                 "symbol": symbol,
@@ -164,62 +174,59 @@ class BybitClient:
                 params["order_link_id"] = order_link_id
             response = self._send_request("place_active_order", params)
             return extract_response(response)
-        else:
-            order_id = f"virtual_{int(time.time() * 1000)}"
-            # --- Margin and capital deduction ---
-            price_used = price or 1.0  # prevent division by zero
-            leverage = 20  # You can make this dynamic
-            margin = self.calculate_margin(qty, price_used, leverage)
 
-            
-            available_capital = self.virtual_wallet.get("virtual", {}).get("available", 0)
-            if margin > available_capital:
-                logger.warning(f"[Virtual] ❌ Not enough capital. Needed: {margin}, Available: {available_capital}")
-                return {"error": "Insufficient virtual capital"}
+        # Virtual mode
+        order_id = f"virtual_{int(time.time() * 1000)}"
+        price_used = price or 1.0  # prevent division by zero
+        leverage = 20  # You can make this dynamic
+        margin = self.calculate_margin(qty, price_used, leverage)
 
-            # Deduct margin from virtual wallet
-            self.virtual_wallet["virtual"]["available"] -= margin
-            self.virtual_wallet["virtual"]["used"] = self.virtual_wallet["virtual"].get("used", 0) + margin
+        # Check if enough capital
+        wallet = self.virtual_wallet.get("virtual", {})
+        available_capital = wallet.get("available", 0)
+        if margin > available_capital:
+            logger.warning(f"[Virtual] ❌ Not enough capital. Needed: {margin}, Available: {available_capital}")
+            return {"error": "Insufficient virtual capital"}
 
-            self._save_virtual_wallet()
+        # ✅ Close any open position on same symbol (if exists) and get PnL
+        closed_pos = self.close_virtual_position(symbol)
+        pnl = closed_pos.get("realized_pnl", 0) if closed_pos else 0
 
-            # --- Create virtual order ---
-            virtual_order = {
-                "order_id": order_id,
-                "symbol": symbol,
-                "side": side,
-                "order_type": order_type,
-                "qty": qty,
-                "price": price,
-                "status": "open",
-                "margin": margin,
-                "leverage": leverage,
-                "create_time": datetime.utcnow()
-            }
-            self._virtual_orders.append(virtual_order)
-            self._virtual_positions.append({
-                "symbol": symbol,
-                "side": side,
-                "qty": qty,
-                "price": price or 0.0,
-                "margin": margin,
-                "status": "open",
-                "create_time": datetime.utcnow(),
-                "order_id": order_id
-            })
+        # ✅ Update wallet
+        wallet["available"] = wallet.get("available", 0) - margin + pnl
+        wallet["used"] = wallet.get("used", 0) + margin
+        self.virtual_wallet["virtual"] = wallet
+        self._save_virtual_wallet()
 
-            self._virtual_orders.append(virtual_order)
-            self._virtual_positions.append({
-                "symbol": symbol,
-                "side": side,
-                "qty": qty,
-                "price": price or 0.0,
-                "status": "open",
-                "create_time": datetime.utcnow(),
-                "order_id": order_id
-            })
-            return virtual_order
+        # ✅ Record virtual order
+        virtual_order = {
+            "order_id": order_id,
+            "symbol": symbol,
+            "side": side,
+            "order_type": order_type,
+            "qty": qty,
+            "price": price,
+            "status": "open",
+            "margin": margin,
+            "leverage": leverage,
+            "create_time": datetime.utcnow()
+        }
+        self._virtual_orders.append(virtual_order)
 
+        self._virtual_positions.append({
+            "symbol": symbol,
+            "side": side,
+            "qty": qty,
+            "price": price or 0.0,
+            "margin": margin,
+            "status": "open",
+            "create_time": datetime.utcnow(),
+            "order_id": order_id
+        })
+
+        return virtual_order
+
+        
     def get_open_positions(self) -> List[Dict[str, Any]]:
         return [pos for pos in self._virtual_positions if pos["status"] == "open"]
 
@@ -232,18 +239,21 @@ class BybitClient:
                 pos["status"] = "closed"
                 pos["close_time"] = datetime.utcnow()
 
-                # Calculate PnL
+                # ✅ Calculate PnL first
                 pnl = self.calculate_virtual_pnl(pos)
-                pos["unrealized_pnl"] = pnl  # Save it as record
-
-                # Refund margin and apply PnL
+                pos["unrealized_pnl"] = pnl
+                pos["realized_pnl"] = pnl  # For virtual trading, unrealized is treated as realized
                 margin = pos.get("margin", 0)
-                self.virtual_wallet["used"] = max(self.virtual_wallet.get("used", 0) - margin, 0)
-                self.virtual_wallet["available"] += margin + pnl
+
+                # ✅ Update wallet
+                wallet = self.virtual_wallet.get("virtual", {})
+                wallet["used"] = max(wallet.get("used", 0) - margin, 0)
+                wallet["available"] = wallet.get("available", 0) + margin + pnl
+                self.virtual_wallet["virtual"] = wallet
 
                 self._save_virtual_wallet()
 
-                logger.info(f"[Virtual] Closed {symbol}: Margin refunded: {margin}, PnL: {pnl:.2f}, New balance: {self.virtual_wallet['available']:.2f}")
+                logger.info(f"[Virtual] Closed {symbol}: Margin refunded: {margin}, PnL: {pnl:.2f}, New balance: {wallet['available']:.2f}")
                 return pos
 
         logger.warning(f"[Virtual] No open position found for {symbol} to close.")
