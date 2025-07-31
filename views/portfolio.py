@@ -65,6 +65,14 @@ def render(trading_engine, dashboard):
             if i == 1:
                 unrealized_pnl = sum(float(t.get("unrealized_pnl", 0.0)) for t in trades)
 
+            # Unrealized PnL for Open Trades
+            unrealized_pnl = 0.0
+            # Realized PnL (Closed Trades)
+            realized_pnl = 0.0
+            if i == 2:  # Closed Trades tab
+                realized_pnl = sum(float(t.get("pnl", 0.0)) for t in trades)
+
+
             # Display top metrics
             col1, col2, col3, col4 = st.columns(4)
             col1.metric("Balance", f"${capital:.2f}", currency)
@@ -76,7 +84,12 @@ def render(trading_engine, dashboard):
                 st.markdown("### 📊 Unrealized P&L")
                 st.metric("Unrealized PnL (Open Trades)", f"${unrealized_pnl:.2f}")
 
+            if i == 2:
+                st.markdown("### 💰 Realized P&L")
+                st.metric("Realized PnL (Closed Trades)", f"${realized_pnl:.2f}")
+                
             st.markdown("---")
+            
 
             # Charts
             left, right = st.columns([2, 1])
