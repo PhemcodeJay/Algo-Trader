@@ -206,10 +206,10 @@ class TradingEngine:
                 continue
 
             trade_data = {
-                "symbol": order.get("Symbol"),
-                "side": order.get("Side"),
-                "qty": order.get("Qty"),
-                "entry_price": order.get("Price"),
+                "symbol": order.get("symbol"),
+                "side": order.get("side"),
+                "qty": order.get("qty"),
+                "entry_price": order.get("price"),
                 "stop_loss": signal.get("SL"),
                 "take_profit": signal.get("TP"),
                 "leverage": signal.get("leverage"),
