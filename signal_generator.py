@@ -16,7 +16,7 @@ MIN_VOLUME = 1000
 MIN_ATR_PCT = 0.001
 RSI_ZONE = (20, 80)
 INTERVALS = ['15', '60', '240']
-MAX_SYMBOLS = 100
+MAX_SYMBOLS = 50
 
 tz_utc3 = timezone(timedelta(hours=3))
 
