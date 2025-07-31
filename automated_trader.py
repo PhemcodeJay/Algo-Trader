@@ -54,7 +54,8 @@ class AutomatedTrader:
         try:
             with open("capital.json", "r") as f:
                 capital_data = json.load(f)
-                capital = capital_data.get("capital", 100)
+                capital = capital_data.get("virtual", {}).get("available", 100)
+
         except Exception as e:
             self.logger.error(f"Failed to read capital.json: {e}")
             capital = 100
@@ -150,8 +151,14 @@ class AutomatedTrader:
                             self.logger.warning(f"⚠️ Skipping unknown symbol: {symbol}")
                             continue
 
-                        balance_info = self.client.get_balance()
-                        capital = balance_info.get("capital", 0.0)
+                        try:
+                            with open("capital.json", "r") as f:
+                                capital_data = json.load(f)
+                                capital = capital_data.get("virtual", {}).get("available", 0.0)
+                        except Exception as e:
+                            self.logger.error(f"Failed to load capital for automation: {e}")
+                            capital = 0.0
+
 
                         if capital < margin_required:
                             self.logger.warning(
