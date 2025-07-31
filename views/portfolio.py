@@ -54,11 +54,18 @@ def render(trading_engine, dashboard):
 
             # Daily PnL
             today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+            def get_attr(t, attr, default=None):
+                if isinstance(t, dict):
+                    return t.get(attr, default)
+                return getattr(t, attr, default)
+
             daily_pnl = sum(
-                float(t.get("pnl", 0.0) or 0.0)
+                float(get_attr(t, "pnl", 0.0) or 0.0)
                 for t in trades
-                if isinstance(t.get("timestamp"), str) and t["timestamp"].startswith(today)
+                if isinstance(get_attr(t, "timestamp"), str) and get_attr(t, "timestamp", "").startswith(today)
             )
+
 
             # Unrealized PnL for Open Trades
             unrealized_pnl = 0.0

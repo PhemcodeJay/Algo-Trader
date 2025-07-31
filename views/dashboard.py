@@ -28,7 +28,7 @@ def render(trading_engine, dashboard, db_manager):
         recent_signals = [s.to_dict() for s in signal_objs]
 
     # === KPI Metrics ===
-    st.markdown("### 📈 Key Metrics")
+    st.markdown("### 📈 Overview")
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("💰 Real Wallet", f"${real_balance.get('available', 100):.2f}", f"{real_daily_pnl:.2f}%")
     col2.metric("🧪 Virtual Wallet", f"${virtual_balance.get('available', 100):.2f}", f"{virtual_daily_pnl:.2f}%")
