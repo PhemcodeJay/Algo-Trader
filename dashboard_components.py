@@ -66,7 +66,7 @@ class DashboardComponents:
             'Confidence': f"{s.get('score', 0)}%",
             'Leverage': f"{s.get('leverage', 20)}x",
             'Qty': f"{s.get('qty', 0):,.2f}",
-            'margin_usdt': f"${s.get('margin_usdt', 0):.2f}",
+            'margin_usdt': f"${s.get('margin_usdt', 5):.2f}",
             'Trend': s.get('trend', 'N/A'),
             'Timestamp': s.get('timestamp', 'N/A')
         } for s in signals])
