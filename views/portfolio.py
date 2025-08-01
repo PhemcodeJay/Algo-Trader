@@ -136,7 +136,7 @@ def render(trading_engine, dashboard):
                                 success = trading_engine.close_virtual_trade(trade.get("id"))
                                 if success:
                                     st.success("Trade closed successfully.")
-                                    st.experimental_rerun()
+                                    st.rerun()
                                 else:
                                     st.error("Failed to close trade.")
             else:
