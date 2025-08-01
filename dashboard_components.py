@@ -216,40 +216,115 @@ class DashboardComponents:
         fig.update_layout(template='plotly_dark', height=600, showlegend=False)
         return fig
 
-    def create_technical_chart(self, chart_data, symbol, indicators):
+    def create_technical_chart(self, chart_data: List[Dict[str, Any]], symbol: str, indicators: List[str]) -> go.Figure:
         if not chart_data:
             return go.Figure()
 
         df = pd.DataFrame(chart_data)
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         df = calculate_indicators(cast(List[Dict[str, Any]], df.to_dict(orient='records')))
-        close = df['close'].tolist()
-        open_ = df['open'].tolist()
 
-        fig = make_subplots(rows=3, cols=1, row_heights=[0.6, 0.2, 0.2], vertical_spacing=0.03,
-                            subplot_titles=(f'{symbol} Price Chart', 'Volume', 'RSI'))
+        # Subplot layout logic
+        has_rsi = "RSI" in indicators and "RSI" in df
+        has_macd = "MACD" in indicators and "MACD_line" in df
+        has_stoch = "Stoch RSI" in indicators and "Stoch_K" in df
 
+        rows = 2 + sum([has_rsi, has_macd, has_stoch])
+        subplot_titles = [f'{symbol} Price', 'Volume']
+        if has_rsi: subplot_titles.append("RSI")
+        if has_macd: subplot_titles.append("MACD")
+        if has_stoch: subplot_titles.append("Stoch RSI")
+
+        fig = make_subplots(
+            rows=rows,
+            cols=1,
+            shared_xaxes=True,
+            vertical_spacing=0.03,
+            row_heights=[0.5] + [0.12] * (rows - 1),
+            subplot_titles=subplot_titles
+        )
+
+        row_idx = 1  # Candlestick chart
+
+        # === Candlestick ===
         fig.add_trace(go.Candlestick(
-            x=df['timestamp'], open=df['open'], high=df['high'],
-            low=df['low'], close=df['close'], name="Candles"), row=1, col=1)
+            x=df['timestamp'],
+            open=df['open'],
+            high=df['high'],
+            low=df['low'],
+            close=df['close'],
+            name="Candles",
+            increasing_line_color='lime',
+            decreasing_line_color='red'
+        ), row=row_idx, col=1)
 
-        if 'EMA 21' in indicators and 'EMA_21' in df:
-            fig.add_trace(go.Scatter(x=df['timestamp'], y=df['EMA_21'], name="EMA 21", line=dict(color='orange')), row=1, col=1)
+        # === Indicators Overlay ===
+        if "EMA 9" in indicators and "EMA_9" in df:
+            fig.add_trace(go.Scatter(x=df['timestamp'], y=df['EMA_9'], name="EMA 9", line=dict(color='cyan')), row=row_idx, col=1)
+        if "EMA 21" in indicators and "EMA_21" in df:
+            fig.add_trace(go.Scatter(x=df['timestamp'], y=df['EMA_21'], name="EMA 21", line=dict(color='orange')), row=row_idx, col=1)
+        if "MA 50" in indicators and "MA_50" in df:
+            fig.add_trace(go.Scatter(x=df['timestamp'], y=df['MA_50'], name="MA 50", line=dict(color='blue')), row=row_idx, col=1)
+        if "MA 200" in indicators and "MA_200" in df:
+            fig.add_trace(go.Scatter(x=df['timestamp'], y=df['MA_200'], name="MA 200", line=dict(color='white')), row=row_idx, col=1)
 
-        if 'EMA 50' in indicators and 'EMA_50' in df:
-            fig.add_trace(go.Scatter(x=df['timestamp'], y=df['EMA_50'], name="EMA 50", line=dict(color='blue')), row=1, col=1)
+        if "Bollinger Bands" in indicators and "BB_upper" in df:
+            fig.add_trace(go.Scatter(x=df['timestamp'], y=df['BB_upper'], name="BB Upper", line=dict(color='gray', dash='dot')), row=row_idx, col=1)
+            fig.add_trace(go.Scatter(x=df['timestamp'], y=df['BB_lower'], name="BB Lower", line=dict(color='gray', dash='dot')), row=row_idx, col=1)
 
-        if 'Bollinger Bands' in indicators and 'BB_upper' in df:
-            fig.add_trace(go.Scatter(x=df['timestamp'], y=df['BB_upper'], name="BB Upper", line=dict(color='gray', dash='dot')), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df['timestamp'], y=df['BB_lower'], name="BB Lower", line=dict(color='gray', dash='dot')), row=1, col=1)
+        # === Volume ===
+        row_idx += 1
+        bar_colors = ['green' if c >= o else 'red' for c, o in zip(df['close'], df['open'])]
+        fig.add_trace(go.Bar(x=df['timestamp'], y=df['volume'], name="Volume", marker_color=bar_colors), row=row_idx, col=1)
 
-        bar_colors = ['green' if c > o else 'red' for c, o in zip(df['close'], df['open'])]
-        fig.add_trace(go.Bar(x=df['timestamp'], y=df['volume'], marker_color=bar_colors), row=2, col=1)
+        # === RSI ===
+        if has_rsi:
+            row_idx += 1
+            fig.add_trace(go.Scatter(
+                x=df['timestamp'], y=df['RSI'],
+                name="RSI", line=dict(color='purple')
+            ), row=row_idx, col=1)
 
-        if 'RSI' in indicators and 'RSI' in df:
-            fig.add_trace(go.Scatter(x=df['timestamp'], y=df['RSI'], name='RSI', line=dict(color='purple')), row=3, col=1)
+            # Add RSI threshold lines using shapes (specific to subplot)
+            fig.add_shape(
+                type="line",
+                x0=df['timestamp'].min(), x1=df['timestamp'].max(),
+                y0=70, y1=70,
+                line=dict(color="red", dash="dash"),
+                xref=f'x{row_idx}' if row_idx > 1 else 'x',
+                yref=f'y{row_idx}' if row_idx > 1 else 'y'
+            )
+            fig.add_shape(
+                type="line",
+                x0=df['timestamp'].min(), x1=df['timestamp'].max(),
+                y0=30, y1=30,
+                line=dict(color="green", dash="dash"),
+                xref=f'x{row_idx}' if row_idx > 1 else 'x',
+                yref=f'y{row_idx}' if row_idx > 1 else 'y'
+            )
 
-        fig.update_layout(template='plotly_dark', height=700)
+        # === MACD ===
+        if has_macd:
+            row_idx += 1
+            fig.add_trace(go.Scatter(x=df['timestamp'], y=df['MACD_line'], name="MACD Line", line=dict(color='cyan')), row=row_idx, col=1)
+            fig.add_trace(go.Scatter(x=df['timestamp'], y=df['MACD_signal'], name="Signal", line=dict(color='orange', dash='dot')), row=row_idx, col=1)
+            fig.add_trace(go.Bar(x=df['timestamp'], y=df['MACD_hist'], name="Histogram", marker_color='lightgray'), row=row_idx, col=1)
+
+        # === Stoch RSI ===
+        if has_stoch:
+            row_idx += 1
+            fig.add_trace(go.Scatter(x=df['timestamp'], y=df['Stoch_K'], name="Stoch %K", line=dict(color='magenta')), row=row_idx, col=1)
+            fig.add_trace(go.Scatter(x=df['timestamp'], y=df['Stoch_D'], name="Stoch %D", line=dict(color='yellow')), row=row_idx, col=1)
+
+        fig.update_layout(
+            template='plotly_dark',
+            height=300 + rows * 200,
+            margin=dict(l=30, r=30, t=50, b=30),
+            showlegend=True,
+            xaxis_rangeslider_visible=False,
+            xaxis=dict(type='date')
+        )
+
         return fig
 
     def render_ticker(self, ticker_data, position='top'):

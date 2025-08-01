@@ -1,33 +1,24 @@
 import streamlit as st
-import os
 import pandas as pd
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 def render(trading_engine, dashboard):
     st.image("logo.png", width=80)
     st.title("📈 Market Analysis")
 
-    # --- Fetch symbols safely ---
+    # === Load available symbols from DB or your own data source ===
     try:
-        symbol_response = trading_engine.client.get_symbols()
-        if isinstance(symbol_response, dict) and "result" in symbol_response:
-            symbols = [item["name"] for item in symbol_response["result"]]
-        elif isinstance(symbol_response, list):
-            symbols = [item.get("symbol") or item.get("name") for item in symbol_response]
-        else:
-            st.warning("Unexpected symbol format from API.")
-            symbols = []
+        symbols = trading_engine.get_tracked_symbols()  # Replace with your method
     except Exception as e:
         st.error(f"Error fetching symbols: {e}")
         return
 
     selected_symbol = st.selectbox("Select Symbol", symbols) if symbols else None
-
     if not selected_symbol:
-        st.info("No symbols available to select.")
+        st.info("No symbols available.")
         return
 
-    # --- User input for chart params ---
+    # === Chart parameters ===
     col1, col2, col3 = st.columns(3)
     with col1:
         timeframe = st.selectbox("Timeframe", ["15m", "1h", "4h", "1d"], index=1)
@@ -36,62 +27,44 @@ def render(trading_engine, dashboard):
     with col3:
         indicators = st.multiselect(
             "Indicators",
-            options=[
-                "EMA 9", "EMA 21", "MA 50", "MA 200", "Bollinger Bands",
-                "RSI", "MACD", "Stoch RSI", "Volume"
-            ],
-            default=["Bollinger Bands", "MA 200", "RSI", "Volume"]
+            options=["EMA 9", "EMA 21", "MA 50", "MA 200", "Bollinger Bands", "RSI", "MACD", "Stoch RSI", "Volume"],
+            default=["MA 200", "Bollinger Bands", "RSI", "Volume"]
         )
 
-    # --- Fetch chart data ---
+    # === Load historical candle data from your DB ===
     with st.spinner("Loading chart data…"):
         try:
-            if hasattr(trading_engine.client, "get_chart_data"):
-                chart_data = trading_engine.client.get_chart_data(selected_symbol, timeframe, limit)
-            else:
-                chart_data = trading_engine.client.get_kline(selected_symbol, interval=timeframe, limit=limit)
+            df = trading_engine.get_historical_candles(symbol=selected_symbol, timeframe=timeframe, limit=limit)
+            if df is None or df.empty:
+                st.warning("No historical data found for this symbol/timeframe.")
+                return
+
+            # Convert and clean timestamps
+            if not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
+                df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+            df.dropna(subset=['timestamp', 'open', 'high', 'low', 'close'], inplace=True)
+
         except Exception as e:
-            st.error(f"Error fetching chart data: {e}")
+            st.error(f"Failed to load historical data from DB: {e}")
             return
 
-        # --- Validate chart data ---
-        if not isinstance(chart_data, list) or len(chart_data) < 5:
-            st.error(f"No chart data returned or invalid format for {selected_symbol}")
-            return
+    # === Render Binance-style chart using Plotly ===
+    try:
+        fig = dashboard.create_technical_chart(
+            data=df.to_dict("records"),
+            symbol=selected_symbol,
+            indicators=indicators,
+            theme="dark",  # Optional: you may support this in your chart builder
+            layout="tight"  # Optional layout mode
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.error(f"Error rendering chart: {e}")
+        st.write(df.head())
+        return
 
-        # --- Check required keys ---
-        sample_keys = chart_data[0].keys()
-        required_cols = {"timestamp", "open", "high", "low", "close"}
-        if not required_cols.issubset(sample_keys):
-            st.error("Chart data is missing OHLC fields.")
-            st.write("Sample keys:", sample_keys)
-            return
-
-        # --- Convert timestamp ---
-        df = pd.DataFrame(chart_data)
-        try:
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', errors='coerce') \
-                if df['timestamp'].max() > 1e12 else pd.to_datetime(df['timestamp'], errors='coerce')
-        except Exception as e:
-            st.error(f"Timestamp conversion error: {e}")
-            return
-
-        df = df.dropna(subset=['timestamp', 'open', 'high', 'low', 'close'])
-
-        if df.empty:
-            st.error("Chart data after cleaning is empty.")
-            return
-
-        # --- Render chart ---
-        try:
-            fig = dashboard.create_technical_chart(df.to_dict("records"), selected_symbol, indicators)
-            st.plotly_chart(fig, use_container_width=True)
-        except Exception as e:
-            st.error(f"Chart rendering error: {e}")
-            st.write("Chart DF Sample:", df.head())
-            return
-
-        # --- Render current signals if available ---
+    # === Optional: Show recent signals from DB ===
+    try:
         current_signals = [
             s for s in trading_engine.get_recent_signals()
             if s.get("symbol") == selected_symbol
@@ -100,3 +73,5 @@ def render(trading_engine, dashboard):
             st.subheader(f"🎯 Current Signals for {selected_symbol}")
             for signal in current_signals:
                 dashboard.display_signal_card(signal)
+    except Exception as e:
+        st.warning(f"Failed to load signals: {e}")
