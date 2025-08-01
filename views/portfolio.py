@@ -1,5 +1,6 @@
 import streamlit as st
 from datetime import datetime, timezone
+from utils import format_trades
 
 def render(trading_engine, dashboard):
     st.image("logo.png", width=80)
@@ -106,7 +107,7 @@ def render(trading_engine, dashboard):
             st.subheader("🧾 Trades Table")
 
             # Format for display
-            formatted_trades = dashboard.format_trades(trades)
+            formatted_trades = format_trades(trades)
 
             if not formatted_trades:
                 st.info("No trades found.")

@@ -1,6 +1,6 @@
 import streamlit as st
 from PIL import Image
-from utils import get_status_color, format_currency, format_percentage, get_ticker_snapshot
+from utils import get_ticker_snapshot
 from engine import engine
 from dashboard_components import DashboardComponents
 from automated_trader import automated_trader
@@ -60,74 +60,28 @@ if st.sidebar.button("🔄 Refresh Now"):
     st.cache_data.clear()
     st.rerun()
 
-# --- Sidebar Wallet & Status ---
-def render_sidebar(trading_engine, automated_trader, db_manager):
+# --- Sidebar Wallet Display ---
+def render_wallet_summary(trading_engine):
     try:
-        # === Load full capital.json once ===
-        capital_data = trading_engine.load_capital() or {}
+        capital_data = trading_engine.load_capital("all") or {}
         real = capital_data.get("real", {})
         virtual = capital_data.get("virtual", {})
 
-        # === Real Wallet Info ===
-        real_capital = float(real.get("capital", 0.0))
-        real_start = float(real.get("start_balance", real_capital))
-        real_pnl = real_capital - real_start
-
-        # === Virtual Wallet Info ===
-        virtual_capital = float(virtual.get("capital", 0.0))
-        virtual_start = float(virtual.get("start_balance", virtual_capital))
-        virtual_pnl = virtual_capital - virtual_start
-
-        # === Display Wallets ===
+        # --- Real Wallet ---
         st.sidebar.subheader("💰 Real Wallet")
-        st.sidebar.metric("Total", f"${real_capital:,.2f}")
-        st.sidebar.metric("Available", f"${real.get('available', 0):,.2f}")
-        st.sidebar.metric("Used", f"${real.get('used', 0):,.2f}")
-        st.sidebar.metric("PnL", format_currency(real_pnl), f"{format_percentage(real_pnl)} today")
+        st.sidebar.metric("Total", f"${float(real.get('capital', 0.0)):,.2f}")
+        st.sidebar.metric("Available", f"${float(real.get('available', 0.0)):,.2f}")
 
+        # --- Virtual Wallet ---
         st.sidebar.subheader("🧪 Virtual Wallet")
-        st.sidebar.metric("Total", f"${virtual_capital:,.2f}")
-        st.sidebar.metric("Available", f"${virtual.get('available', 0):,.2f}")
-        st.sidebar.metric("Used", f"${virtual.get('used', 0):,.2f}")
-        st.sidebar.metric("PnL", format_currency(virtual_pnl), f"{format_percentage(virtual_pnl)} today")
-
-
-        # === Trading Status based on MAX_LOSS_PCT threshold ===
-        max_loss_pct = float(trading_engine.default_settings.get("MAX_LOSS_PCT", -15.0))
-        trading_status = "🟢 Active" if real_pnl > max_loss_pct else "🔴 Paused"
-        status_color = get_status_color("success" if real_pnl > 0 else "failed" if real_pnl < 0 else "pending")
-
-        st.sidebar.markdown(
-            f"**Status:** <span style='color: {status_color}'>{trading_status}</span>",
-            unsafe_allow_html=True
-        )
-
-        # === Automation Status ===
-        automation_status = automated_trader.get_status()
-        is_running = automation_status.get("running", False)
-        automation_color = "#00d4aa" if is_running else "#ff4444"
-        automation_label = "🤖 Running" if is_running else "⏸️ Stopped"
-
-        st.sidebar.markdown(
-            f"**Auto Mode:** <span style='color: {automation_color}'>{automation_label}</span>",
-            unsafe_allow_html=True
-        )
-
-        # === Database Health ===
-        db_health = db_manager.get_db_health()
-        db_color = "#00d4aa" if db_health.get("status") == "ok" else "#ff4444"
-        db_status = "🟢 Ok" if db_health.get("status") == "ok" else f"🔴 Error: {db_health.get('error', 'Unknown')}"
-        st.sidebar.markdown(
-            f"**Database:** <span style='color: {db_color}'>{db_status}</span>",
-            unsafe_allow_html=True
-        )
+        st.sidebar.metric("Total", f"${float(virtual.get('capital', 0.0)):,.2f}")
+        st.sidebar.metric("Available", f"${float(virtual.get('available', 0.0)):,.2f}")
 
     except Exception as e:
-        st.sidebar.error(f"❌ Sidebar Metrics Error: {e}")
+        st.sidebar.error(f"❌ Wallet Load Error: {e}")
 
-
-# ✅ --- RENDER Sidebar Info ---
-render_sidebar(trading_engine, automated_trader, db_manager)
+# ✅ Render Sidebar Wallet Info
+render_wallet_summary(trading_engine)
 
 # --- Page Routing ---
 if page == "🏠 Dashboard":

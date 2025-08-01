@@ -274,3 +274,19 @@ def get_signal_strength_text(confidence):
         return "⚠️ Weak"
     else:
         return "❌ Very Weak"
+
+
+def format_trades(trades):
+    return [
+        {
+            "symbol": getattr(t, "symbol", "N/A"),
+            "side": getattr(t, "side", "N/A"),
+            "entry": getattr(t, "entry", 0),
+            "exit": getattr(t, "exit", 0),
+            "pnl": getattr(t, "pnl", 0),
+            "strategy": getattr(t, "strategy", "N/A"),
+            "timestamp": getattr(t, "timestamp", "N/A"),
+            "virtual": getattr(t, "virtual", False),
+        }
+        for t in trades
+    ]

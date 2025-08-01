@@ -1,40 +1,32 @@
 import streamlit as st
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from db import Signal  # ✅ Signal model
-from utils import format_currency, format_percentage
-
+from utils import format_currency
+        
 
 def render(trading_engine, dashboard, db_manager):
     st.image("logo.png", width=80)
     st.title("🚀 AlgoTrader Dashboard")
 
-    # === Load wallet data from capital.json ===
-    capital_data = trading_engine.load_capital() or {}
+    # === Load wallet data ===
+    capital_data = trading_engine.load_capital("all") or {}
     real = capital_data.get("real", {})
     virtual = capital_data.get("virtual", {})
 
-    # === Extract and convert real wallet values ===
-    real_capital = float(real.get("capital", 0.0))
-    real_start = float(real.get("start_balance", real_capital))
+    real_total = float(real.get("capital", 0.0))
     real_available = float(real.get("available", 0.0))
-    real_used = float(real.get("used", 0.0))
-    real_daily_pnl = real_capital - real_start
 
-    # === Extract and convert virtual wallet values ===
-    virtual_capital = float(virtual.get("capital", 0.0))
-    virtual_start = float(virtual.get("start_balance", virtual_capital))
+    virtual_total = float(virtual.get("capital", 0.0))
     virtual_available = float(virtual.get("available", 0.0))
-    virtual_used = float(virtual.get("used", 0.0))
-    virtual_daily_pnl = virtual_capital - virtual_start
 
-    # === Load trades and split ===
+    # === Load recent trades ===
     all_trades = trading_engine.get_recent_trades(limit=100) or []
     real_trades = [t for t in all_trades if not t.get("virtual")]
     virtual_trades = [t for t in all_trades if t.get("virtual")]
 
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    # === Recent signals from DB ===
+    # === Load recent signals ===
     with db_manager.get_session() as session:
         signal_objs = session.query(Signal).order_by(Signal.created_at.desc()).limit(5).all()
         recent_signals = [s.to_dict() for s in signal_objs]
@@ -43,8 +35,8 @@ def render(trading_engine, dashboard, db_manager):
     st.markdown("### 📈 Overview")
     col1, col2, col3, col4 = st.columns(4)
 
-    col1.metric("💰 Real Wallet", format_currency(real_available), format_currency(real_daily_pnl))
-    col2.metric("🧪 Virtual Wallet", format_currency(virtual_available), format_currency(virtual_daily_pnl))
+    col1.metric("💰 Real Wallet", format_currency(real_total), f"Available: {format_currency(real_available)}")
+    col2.metric("🧪 Virtual Wallet", format_currency(virtual_total), f"Available: {format_currency(virtual_available)}")
     col3.metric("📡 Active Signals", len(recent_signals), "Recent")
     col4.metric("📅 Real Trades Today", len([
         t for t in real_trades if str(t.get("timestamp", "")).startswith(today_str)
@@ -70,7 +62,7 @@ def render(trading_engine, dashboard, db_manager):
     with col_right:
         st.subheader("📊 Real Wallet Performance")
         if real_trades:
-            fig = dashboard.create_portfolio_performance_chart(real_trades, real_start)
+            fig = dashboard.create_portfolio_performance_chart(real_trades, real_total)
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("No real trade history available.")
