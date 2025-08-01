@@ -84,7 +84,7 @@ def render(trading_engine, dashboard, automated_trader):
     col1, col2 = st.columns(2)
     with col1:
         signal_interval = st.slider(
-            "Signal Interval (min)", 5, 60,
+            "Signal Interval (min)", 15, 90,
             int(settings.get("interval", 900)) // 60
         )
         max_signals = st.slider(
