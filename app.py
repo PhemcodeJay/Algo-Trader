@@ -23,9 +23,9 @@ st.sidebar.title("🚀 AlgoTrader")
 st.sidebar.markdown("---")
 
 # --- Auto Refresh ---
-auto_refresh_enabled = st.sidebar.checkbox("Auto Refresh (5 min)", value=True)
+auto_refresh_enabled = st.sidebar.checkbox("Auto Refresh (15 min)", value=True)
 if auto_refresh_enabled:
-    st_autorefresh(interval=300_000, limit=None, key="auto_refresh_5min")
+    st_autorefresh(interval=900_000, limit=None, key="auto_refresh_15min")
 
 # --- Init Components (cached) ---
 @st.cache_resource
@@ -55,7 +55,7 @@ page = st.sidebar.selectbox(
     ]
 )
 
-# --- Manual Refresh ---
+# --- Manual Refresh Button ---
 if st.sidebar.button("🔄 Refresh Now"):
     st.cache_data.clear()
     st.rerun()
@@ -63,23 +63,18 @@ if st.sidebar.button("🔄 Refresh Now"):
 # --- Sidebar Wallet & Status ---
 def render_sidebar(trading_engine, automated_trader, db_manager):
     try:
-        # Load wallet balances
         real_balance = trading_engine.load_capital(mode="real") or {}
         virtual_balance = trading_engine.load_capital(mode="virtual") or {}
 
-        # Extract capital safely with fallbacks
         real_total = float(real_balance.get("capital") or real_balance.get("available", 0.0) + real_balance.get("used", 0.0))
         virtual_total = float(virtual_balance.get("capital") or virtual_balance.get("available", 100.0) + virtual_balance.get("used", 0.0))
 
-        # Get Daily PnL
         real_pnl = float(trading_engine.get_daily_pnl(mode="real") or 0.0)
         virtual_pnl = float(trading_engine.get_daily_pnl(mode="virtual") or 0.0)
 
-        # Display wallet metrics with dollar formatting
         st.sidebar.metric("💰 Real Wallet", f"${real_total:,.2f}", f"{format_percentage(real_pnl)} today")
         st.sidebar.metric("🧪 Virtual Wallet", f"${virtual_total:,.2f}", f"{format_percentage(virtual_pnl)} today")
 
-        # Trading Status (based on PnL)
         max_loss_pct = float(trading_engine.default_settings.get("MAX_LOSS_PCT", -15.0))
         trading_status = "🟢 Active" if real_pnl > max_loss_pct else "🔴 Paused"
         status_color = get_status_color("success" if real_pnl > 0 else "failed" if real_pnl < 0 else "pending")
@@ -89,7 +84,6 @@ def render_sidebar(trading_engine, automated_trader, db_manager):
             unsafe_allow_html=True
         )
 
-        # Automation status
         automation_status = automated_trader.get_status()
         is_running = automation_status.get("running", False)
         automation_color = "#00d4aa" if is_running else "#ff4444"
@@ -100,7 +94,6 @@ def render_sidebar(trading_engine, automated_trader, db_manager):
             unsafe_allow_html=True
         )
 
-        # Database status
         db_health = db_manager.get_db_health()
         db_color = "#00d4aa" if db_health.get("status") == "ok" else "#ff4444"
         db_status = "🟢 Ok" if db_health.get("status") == "ok" else f"🔴 Error: {db_health.get('error', 'Unknown')}"
@@ -111,3 +104,47 @@ def render_sidebar(trading_engine, automated_trader, db_manager):
 
     except Exception as e:
         st.sidebar.error(f"❌ Sidebar Metrics Error: {e}")
+
+# ✅ --- RENDER Sidebar Info ---
+render_sidebar(trading_engine, automated_trader, db_manager)
+
+# --- Page Routing ---
+if page == "🏠 Dashboard":
+    import views.dashboard as view
+    view.render(trading_engine, dashboard, db_manager)
+
+elif page == "📊 Signals":
+    import views.signals as view
+    view.render(trading_engine, dashboard)
+
+elif page == "💼 Portfolio":
+    import views.portfolio as view
+    view.render(trading_engine, dashboard)
+
+elif page == "📈 Charts":
+    import views.charts as view
+    view.render(trading_engine, dashboard)
+
+elif page == "🤖 Automation":
+    import views.automation as view
+    view.render(trading_engine, dashboard, automated_trader)
+
+elif page == "🗄️ Database":
+    st.title("🗄️ Database Overview")
+
+    db_health = db_manager.get_db_health()
+    st.write(f"Database Health: {db_health.get('status')}")
+    if db_health.get("status") != "ok":
+        st.error(f"Database Error: {db_health.get('error', 'Unknown error')}")
+
+    signals_count = db_manager.get_signals_count()
+    trades_count = db_manager.get_trades_count()
+    portfolio_count = db_manager.get_portfolio_count()
+
+    st.write(f"Signals count: {signals_count}")
+    st.write(f"Trades count: {trades_count}")
+    st.write(f"Portfolio count: {portfolio_count}")
+
+elif page == "⚙️ Settings":
+    import views.settings as view
+    view.render(trading_engine, dashboard)
