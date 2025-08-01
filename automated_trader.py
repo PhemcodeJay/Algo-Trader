@@ -2,7 +2,8 @@ import json
 import time
 import threading
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+import streamlit as st
 import bybit_client
 from engine import TradingEngine
 from utils import calculate_drawdown
@@ -43,7 +44,7 @@ class AutomatedTrader:
             "failed_trades": 0,
             "total_pnl": 0.0,
         }
-        self.logger = logging.getLogger(__name__)
+        self.logger = logger
 
     def get_today_trades(self):
         all_trades = self.db.get_trades(limit=500)
@@ -162,7 +163,7 @@ class AutomatedTrader:
                     if not self.check_risk_limits():
                         self.logger.info("⛔ Risk limits triggered. Sleeping for 1 hour with countdown.")
 
-                        for remaining in range(60, 0, -1):  # 60 minutes
+                        for remaining in range(60, 0, -1):
                             if not self.is_running:
                                 self.logger.info("🛑 Automation stopped manually during risk cooldown.")
                                 return
@@ -205,6 +206,33 @@ class AutomatedTrader:
                         if len(top_signals) >= self.max_signals:
                             break
 
+                    # 🟩 Insert Trades into DB
+                    for signal in top_signals:
+                        try:
+                            order_id = f"virtual_{int(time.time() * 1000)}"
+                            trade_data = {
+                                "symbol": signal.get("Symbol"),
+                                "side": signal.get("side", "Buy"),
+                                "qty": signal.get("qty", 0.01),
+                                "entry_price": signal.get("entry_price", 0.0),
+                                "exit_price": None,
+                                "stop_loss": signal.get("sl"),
+                                "take_profit": signal.get("tp"),
+                                "leverage": signal.get("leverage", 20),
+                                "margin_usdt": signal.get("margin_usdt"),
+                                "pnl": None,
+                                "timestamp": datetime.now(timezone.utc),
+                                "status": "open",
+                                "order_id": order_id,
+                                "virtual": not self.bybitClient.use_real,
+                            }
+
+                            self.db.add_trade(trade_data)
+                            self.logger.info(f"✅ Trade inserted: {trade_data['symbol']} | Order ID: {order_id}")
+
+                        except Exception as e:
+                            self.logger.error(f"❌ Failed to insert trade for {signal.get('Symbol')}: {e}", exc_info=True)
+
                     # 📊 Update stats
                     self.stats["signals_generated"] += len(top_signals)
                     self.stats["last_update"] = now.isoformat()
@@ -213,14 +241,14 @@ class AutomatedTrader:
                     self.db.update_automation_stats(self.stats)
 
                     self.last_run_time = now
-                    self.logger.info(f"✅ Cycle complete. {len(top_signals)} signals executed. Next run in {self.signal_interval} seconds.")
+                    self.logger.info(f"✅ Cycle complete. {len(top_signals)} trades processed. Next run in {self.signal_interval} seconds.")
 
                 time.sleep(30)
 
             except Exception as e:
                 self.logger.error(f"❌ Automation error: {e}", exc_info=True)
                 time.sleep(90)
-
+            
 
     def start(self):
         if self.is_running:
