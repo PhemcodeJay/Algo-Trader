@@ -54,7 +54,7 @@ def render(trading_engine, dashboard):
                 return t.get(attr, default) if isinstance(t, dict) else getattr(t, attr, default)
 
             daily_pnl = sum(
-                float(get_attr(t, "pnl", 0.0))
+                float(get_attr(t, "pnl", 0.0) or 0.0)  # Handles None safely
                 for t in trades
                 if isinstance(get_attr(t, "timestamp", ""), str)
                 and get_attr(t, "timestamp", "").startswith(today_str)
