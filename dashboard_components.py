@@ -113,21 +113,21 @@ class DashboardComponents:
 
         df = pd.DataFrame([
             {
-                'Symbol': t.get('symbol', 'N/A'),
-                'Side': t.get('side', 'N/A'),
-                'Entry': f"${t['entry']:.2f}" if t.get('entry') is not None else "N/A",
-                'Exit': f"${t['exit']:.2f}" if t.get('exit') is not None else "N/A",
-                'Qty': f"{t['qty']:,.2f}" if t.get('qty') is not None else "N/A",
-                'Leverage': f"{t['leverage']}x" if t.get('leverage') is not None else "N/A",
-                'margin_usdt': f"${t['margin_usdt']:.2f}" if t.get('margin_usdt') is not None else "N/A",
+                'Symbol': getattr(t, 'symbol', 'N/A'),
+                'Side': getattr(t, 'side', 'N/A'),
+                'Entry': f"${getattr(t, 'entry', 0):.2f}" if getattr(t, 'entry', None) is not None else "N/A",
+                'Exit': f"${getattr(t, 'exit', 0):.2f}" if getattr(t, 'exit', None) is not None else "N/A",
+                'Qty': f"{getattr(t, 'qty', 0):,.2f}" if getattr(t, 'qty', None) is not None else "N/A",
+                'Leverage': f"{getattr(t, 'leverage', 0)}x" if getattr(t, 'leverage', None) is not None else "N/A",
+                'margin_usdt': f"${getattr(t, 'margin_usdt', 0):.2f}" if getattr(t, 'margin_usdt', None) is not None else "N/A",
                 'P&L': (
-                    f"{'🟢' if (t.get('pnl', 0) or 0) > 0 else '🔴'} ${t['pnl']:.2f}"
-                    if t.get('pnl') is not None else "N/A"
+                    f"{'🟢' if getattr(t, 'pnl', 0) > 0 else '🔴'} ${getattr(t, 'pnl', 0):.2f}"
+                    if getattr(t, 'pnl', None) is not None else "N/A"
                 ),
-                'Duration': t.get('duration', 'N/A'),
-                'Strategy': t.get('strategy', 'N/A'),
-                'Virtual': '✅' if t.get('virtual') else '❌',
-                'Timestamp': format_timestamp(t.get('timestamp'))
+                'Duration': getattr(t, 'duration', 'N/A'),
+                'Strategy': getattr(t, 'strategy', 'N/A'),
+                'Virtual': '✅' if getattr(t, 'virtual', False) else '❌',
+                'Timestamp': format_timestamp(getattr(t, 'timestamp', None))
             }
             for t in trades
         ])
@@ -333,24 +333,23 @@ class DashboardComponents:
 
         def format_volume(val):
             if val >= 1_000_000_000:
-                return f"{val / 1_000_000_000:.1f}B"
+                return f"${val / 1_000_000_000:.1f}B"
             elif val >= 1_000_000:
-                return f"{val / 1_000_000:.1f}M"
+                return f"${val / 1_000_000:.1f}M"
             elif val >= 1_000:
-                return f"{val / 1_000:.1f}K"
+                return f"${val / 1_000:.1f}K"
             else:
-                return f"{val:.2f}"
+                return f"${val:.2f}"
 
         cleaned = []
         for item in ticker_data:
             try:
-                symbol = item.get('symbol')
-                price = float(item.get('lastPrice', 0))
-                change = float(item.get('price24hPcnt', 0)) * 100
+                symbol = item.get('symbol', 'N/A')
+                price = float(item.get('lastPrice') or 0)
+                change = float(item.get('price24hPcnt') or 0) * 100
                 volume = float(item.get("turnover24h") or item.get("volume24h") or 0)
-                formatted_volume = f"${volume:,.2f}"
-                cleaned.append({'symbol': symbol, 'price': price, 'change': change, 'volume': volume, 'formatted_volume': formatted_volume})
-            except:
+                cleaned.append({'symbol': symbol, 'price': price, 'change': change, 'volume': volume})
+            except (ValueError, TypeError):
                 continue
 
         top_20 = sorted(cleaned, key=lambda x: x['volume'], reverse=True)[:20]

@@ -58,9 +58,9 @@ class MLFilter:
                 margin = capital / leverage
                 signal["margin_usdt"] = round(margin, 2)
             else:
-                signal["margin_usdt"] = None
+                signal["margin_usdt"] = 5.0  # ✅ fallback default
         except (ValueError, TypeError):
-            signal["margin_usdt"] = None
+            signal["margin_usdt"] = 5.0  # ✅ fallback default on error
 
         return signal
 

@@ -174,7 +174,7 @@ class TradingEngine:
                 enhanced = self.ml.enhance_signal(raw)
 
                 enhanced["leverage"] = enhanced.get("leverage", 20)
-                enhanced["margin_usdt"] = enhanced.get("margin_usdt", 5.0)
+                enhanced["margin_usdt"] = enhanced.get("margin_usdt") or 5.0
 
                 print(
                     f"✅ ML Signal: {enhanced.get('Symbol')} "
