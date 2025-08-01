@@ -156,15 +156,25 @@ class TradingEngine:
         symbols = get_usdt_symbols()
 
         for symbol in symbols:
-            raw = analyze(symbol)
-            if raw:
+            enhanced = None
+            raw = None
+
+            # Step 1: Analyze signal
+            try:
+                raw = analyze(symbol)
+            except Exception as e:
+                print(f"[Engine] ❌ Failed to analyze {symbol}: {e}")
+                continue
+
+            if not raw:
+                continue  # Skip empty signal
+
+            # Step 2: Enhance signal
+            try:
                 enhanced = self.ml.enhance_signal(raw)
 
-                if "leverage" not in enhanced or enhanced["leverage"] is None:
-                    enhanced["leverage"] = 20  # Default leverage
-
-                if "margin_usdt" not in enhanced or enhanced["margin_usdt"] is None:
-                    enhanced["margin_usdt"] = 5.0  # Default margin
+                enhanced["leverage"] = enhanced.get("leverage", 20)
+                enhanced["margin_usdt"] = enhanced.get("margin_usdt", 5.0)
 
                 print(
                     f"✅ ML Signal: {enhanced.get('Symbol')} "
@@ -195,13 +205,18 @@ class TradingEngine:
                 self.post_signal_to_telegram(enhanced)
                 signals.append(enhanced)
 
-            time.sleep(0.2)
+                time.sleep(0.2)
 
+            except Exception as e:
+                print(f"[Engine] ❌ Error enhancing signal for {symbol}: {e}")
+                continue
 
+        # Step 3: Handle no signal case
         if not signals:
             print("[Engine] ⚠️ No tradable signals found.")
             return []
 
+        # Step 4: Execute top trades
         signals.sort(key=lambda x: x.get("score", 0), reverse=True)
         top_signals = signals[:top_n_signals]
 
@@ -222,15 +237,13 @@ class TradingEngine:
                 print(f"[Engine] ❌ Order failed for {signal.get('Symbol')}: {e}")
                 continue
 
-            # ✅ Handle failed order (returns None or dict with "error")
             if not order or "symbol" not in order:
                 print(f"[Engine] ⚠️ Skipping failed order for {signal.get('Symbol')}: {order}")
                 continue
 
-            # Validate critical fields from `order` and `signal`
+            # Validate required fields
             required_order_fields = ["symbol", "side", "qty", "price", "order_id"]
             required_signal_fields = ["SL", "TP", "leverage", "margin_usdt"]
-
             missing_fields = [
                 key for key in required_order_fields if not order.get(key)
             ] + [
@@ -238,9 +251,10 @@ class TradingEngine:
             ]
 
             if missing_fields:
-                raise ValueError(f"Missing required fields in trade_data: {missing_fields}")
+                print(f"[Engine] ⚠️ Missing required fields: {missing_fields}")
+                continue
 
-            # Construct trade_data
+            # Build trade record
             trade_data = {
                 "symbol": order["symbol"],
                 "side": order["side"],
@@ -263,13 +277,16 @@ class TradingEngine:
             self.post_trade_to_telegram(trade_data)
             trades.append(trade_data)
 
+        # Step 5: Save to PDF
         self.save_signal_pdf(signals)
         self.save_trade_pdf(trades)
 
+        # Step 6: Virtual mode monitor
         if not getattr(self.client, "use_real", False) and hasattr(self.client, "monitor_virtual_orders"):
-            self.client.monitor_virtual_orders() # type: ignore
+            self.client.monitor_virtual_orders()  # type: ignore
 
         return top_signals
+
 
 
     def run_loop(self):
