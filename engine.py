@@ -60,6 +60,36 @@ class TradingEngine:
         """Return list of tradable USDT symbols."""
         return get_usdt_symbols()
 
+    def apply_pnl_to_capital(self, trade: dict):
+        """
+        Apply the PnL of a closed trade to the appropriate capital (real or virtual).
+        """
+        if not trade:
+            logger.warning("[Engine] apply_pnl_to_capital: Empty trade data.")
+            return
+
+        pnl = trade.get("pnl")
+        if pnl is None:
+            logger.warning("[Engine] apply_pnl_to_capital: Trade has no PnL.")
+            return
+
+        mode = "virtual" if trade.get("virtual", False) else "real"
+
+        try:
+            capital = self.load_capital(mode)
+            capital_before = capital.get("capital", 0.0)
+            capital["capital"] = capital_before + float(pnl)
+            self.save_capital(mode, capital)
+
+            logger.info(
+                f"[Engine] 💰 Updated {mode.upper()} capital: "
+                f"{capital_before:.2f} → {capital['capital']:.2f} "
+                f"(PnL: {pnl:.2f})"
+            )
+        except Exception as e:
+            logger.error(f"[Engine] Failed to update capital for {mode.upper()}: {e}")
+
+
     def save_signal_pdf(self, signals: list[dict]):
         if not signals:
             print("[Engine] ⚠️ No signals to save.")
@@ -286,7 +316,6 @@ class TradingEngine:
             self.client.monitor_virtual_orders()  # type: ignore
 
         return top_signals
-
 
 
     def run_loop(self):
@@ -525,6 +554,15 @@ class TradingEngine:
 
     def get_closed_real_trades(self):
         return self.db.get_closed_real_trades()
+    
+    def get_open_positions(self, mode="all"):
+        if mode == "real":
+            return self.get_open_real_trades()
+        elif mode == "virtual":
+            return self.get_open_virtual_trades()
+        else:
+            return self.get_open_real_trades() + self.get_open_virtual_trades()
+
 
 # Export singleton
 engine = TradingEngine()

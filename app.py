@@ -63,18 +63,26 @@ if st.sidebar.button("🔄 Refresh Now"):
 # --- Sidebar Wallet & Status ---
 def render_sidebar(trading_engine, automated_trader, db_manager):
     try:
-        real_balance = trading_engine.load_capital(mode="real") or {}
-        virtual_balance = trading_engine.load_capital(mode="virtual") or {}
+        # === Load full capital.json once ===
+        capital_data = trading_engine.load_capital() or {}
+        real = capital_data.get("real", {})
+        virtual = capital_data.get("virtual", {})
 
-        real_total = float(real_balance.get("capital") or real_balance.get("available", 0.0) + real_balance.get("used", 0.0))
-        virtual_total = float(virtual_balance.get("capital") or virtual_balance.get("available", 100.0) + virtual_balance.get("used", 0.0))
+        # === Real Wallet Info ===
+        real_capital = float(real.get("capital", 0.0))
+        real_start = float(real.get("start_balance", real_capital))
+        real_pnl = real_capital - real_start
 
-        real_pnl = float(trading_engine.get_daily_pnl(mode="real") or 0.0)
-        virtual_pnl = float(trading_engine.get_daily_pnl(mode="virtual") or 0.0)
+        # === Virtual Wallet Info ===
+        virtual_capital = float(virtual.get("capital", 0.0))
+        virtual_start = float(virtual.get("start_balance", virtual_capital))
+        virtual_pnl = virtual_capital - virtual_start
 
-        st.sidebar.metric("💰 Real Wallet", f"${real_total:,.2f}", f"{format_percentage(real_pnl)} today")
-        st.sidebar.metric("🧪 Virtual Wallet", f"${virtual_total:,.2f}", f"{format_percentage(virtual_pnl)} today")
+        # === Display Wallets ===
+        st.sidebar.metric("💰 Real Wallet", f"${real_capital:,.2f}", f"{format_percentage(real_pnl)} today")
+        st.sidebar.metric("🧪 Virtual Wallet", f"${virtual_capital:,.2f}", f"{format_percentage(virtual_pnl)} today")
 
+        # === Trading Status based on MAX_LOSS_PCT threshold ===
         max_loss_pct = float(trading_engine.default_settings.get("MAX_LOSS_PCT", -15.0))
         trading_status = "🟢 Active" if real_pnl > max_loss_pct else "🔴 Paused"
         status_color = get_status_color("success" if real_pnl > 0 else "failed" if real_pnl < 0 else "pending")
@@ -84,6 +92,7 @@ def render_sidebar(trading_engine, automated_trader, db_manager):
             unsafe_allow_html=True
         )
 
+        # === Automation Status ===
         automation_status = automated_trader.get_status()
         is_running = automation_status.get("running", False)
         automation_color = "#00d4aa" if is_running else "#ff4444"
@@ -94,6 +103,7 @@ def render_sidebar(trading_engine, automated_trader, db_manager):
             unsafe_allow_html=True
         )
 
+        # === Database Health ===
         db_health = db_manager.get_db_health()
         db_color = "#00d4aa" if db_health.get("status") == "ok" else "#ff4444"
         db_status = "🟢 Ok" if db_health.get("status") == "ok" else f"🔴 Error: {db_health.get('error', 'Unknown')}"
@@ -104,6 +114,7 @@ def render_sidebar(trading_engine, automated_trader, db_manager):
 
     except Exception as e:
         st.sidebar.error(f"❌ Sidebar Metrics Error: {e}")
+
 
 # ✅ --- RENDER Sidebar Info ---
 render_sidebar(trading_engine, automated_trader, db_manager)

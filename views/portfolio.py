@@ -1,12 +1,10 @@
 import streamlit as st
 from datetime import datetime, timezone
 
-
 def render(trading_engine, dashboard):
     st.image("logo.png", width=80)
     st.title("💼 Wallet Summary")
 
-    # Helper for safe attribute/dict access
     def get_attr(t, attr, default=None):
         return t.get(attr, default) if isinstance(t, dict) else getattr(t, attr, default)
 
@@ -16,25 +14,28 @@ def render(trading_engine, dashboard):
         with tab:
             mode = st.radio("Mode", ["All", "Real", "Virtual"], key=f"mode_{i}", horizontal=True)
 
-            # === Load trades ===
+            # === Load trades based on tab and mode ===
             if i == 0:
                 trades = trading_engine.get_recent_trades(limit=100) or []
-            elif i == 1:
-                trades = (
-                    trading_engine.get_open_real_trades() + trading_engine.get_open_virtual_trades()
-                    if mode == "All" else
-                    trading_engine.get_open_real_trades()
-                    if mode == "Real" else
-                    trading_engine.get_open_virtual_trades()
-                )
             else:
-                trades = (
-                    trading_engine.get_closed_real_trades() + trading_engine.get_closed_virtual_trades()
-                    if mode == "All" else
-                    trading_engine.get_closed_real_trades()
-                    if mode == "Real" else
-                    trading_engine.get_closed_virtual_trades()
-                )
+                if mode == "All":
+                    trades = (
+                        trading_engine.get_open_real_trades() + trading_engine.get_open_virtual_trades()
+                        if i == 1 else
+                        trading_engine.get_closed_real_trades() + trading_engine.get_closed_virtual_trades()
+                    )
+                elif mode == "Real":
+                    trades = (
+                        trading_engine.get_open_real_trades()
+                        if i == 1 else
+                        trading_engine.get_closed_real_trades()
+                    )
+                else:
+                    trades = (
+                        trading_engine.get_open_virtual_trades()
+                        if i == 1 else
+                        trading_engine.get_closed_virtual_trades()
+                    )
 
             # === Load capital based on mode ===
             if mode == "All":
@@ -43,29 +44,28 @@ def render(trading_engine, dashboard):
                 virtual = balances.get("virtual", {})
                 capital = float(real.get("capital", 0.0)) + float(virtual.get("capital", 0.0))
                 start_balance = float(real.get("start_balance", 0.0)) + float(virtual.get("start_balance", 0.0))
-                currency = real.get("currency", virtual.get("currency", "USD"))
+                currency = real.get("currency") or virtual.get("currency", "USD")
             else:
                 balance = trading_engine.load_capital(mode.lower()) or {}
                 capital = float(balance.get("capital", 0.0))
                 start_balance = float(balance.get("start_balance", 0.0))
                 currency = balance.get("currency", "USD")
 
+            # === Metrics Calculation ===
             total_return_pct = ((capital - start_balance) / start_balance * 100) if start_balance else 0.0
             win_rate = trading_engine.calculate_win_rate(trades)
             today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-            # === Daily PnL ===
             daily_pnl = sum(
                 float(get_attr(t, "pnl", 0.0) or 0.0)
                 for t in trades
                 if str(get_attr(t, "timestamp", "")).startswith(today_str)
             )
 
-            # === PnL Metrics based on tab ===
             unrealized_pnl = sum(float(get_attr(t, "unrealized_pnl", 0.0)) for t in trades) if i == 1 else 0.0
             realized_pnl = sum(float(get_attr(t, "pnl", 0.0)) for t in trades) if i == 2 else 0.0
 
-            # === Metrics Display ===
+            # === Dashboard Metrics ===
             col1, col2, col3, col4 = st.columns(4)
             col1.metric("Balance", f"${capital:,.2f}", currency)
             col2.metric("Total Return", f"{total_return_pct:+.2f}%")
