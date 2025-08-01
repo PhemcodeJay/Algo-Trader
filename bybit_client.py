@@ -6,6 +6,8 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Tuple, Union, List, cast
 import requests
 from requests.structures import CaseInsensitiveDict
+from db import db_manager
+
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -324,6 +326,21 @@ class BybitClient:
             "order_id": order_id
         })
 
+        # After successful order placement (real or virtual)
+        trade_data = {
+            "symbol": symbol,
+            "side": side,
+            "qty": qty,
+            "entry_price": price or 0.0,
+            "leverage": 20,
+            "margin_usdt": margin,
+            "order_id": order_id,
+            "status": "open",
+            "timestamp": datetime.utcnow(),
+            "virtual": not self.use_real
+        }
+        db_manager.add_trade(trade_data)
+
         return virtual_order
 
 
@@ -340,10 +357,10 @@ class BybitClient:
                 pos["status"] = "closed"
                 pos["close_time"] = datetime.utcnow()
 
-                # ✅ Calculate PnL first
+                # ✅ Calculate PnL
                 pnl = self.calculate_virtual_pnl(pos)
                 pos["unrealized_pnl"] = pnl
-                pos["realized_pnl"] = pnl  # For virtual trading, unrealized is treated as realized
+                pos["realized_pnl"] = pnl  # Virtual PnL treated as realized
                 margin = pos.get("margin", 0)
 
                 # ✅ Update wallet
@@ -351,8 +368,19 @@ class BybitClient:
                 wallet["used"] = max(wallet.get("used", 0) - margin, 0)
                 wallet["available"] = wallet.get("available", 0) + margin + pnl
                 self.virtual_wallet["virtual"] = wallet
-
                 self._save_virtual_wallet()
+
+                # ✅ Log to DB
+                candles = self.get_chart_data(symbol=symbol, interval="1", limit=1)
+                if candles:
+                    exit_price = candles[-1]["close"]
+                    db_manager.close_trade(
+                        order_id=pos["order_id"],
+                        exit_price=exit_price,
+                        pnl=pnl
+                    )
+                else:
+                    logger.warning(f"[Virtual] ⚠️ Could not fetch exit price for {symbol}, trade not logged.")
 
                 logger.info(f"[Virtual] Closed {symbol}: Margin refunded: {margin}, PnL: {pnl:.2f}, New balance: {wallet['available']:.2f}")
                 return pos

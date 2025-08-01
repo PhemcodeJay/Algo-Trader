@@ -79,8 +79,18 @@ def render_sidebar(trading_engine, automated_trader, db_manager):
         virtual_pnl = virtual_capital - virtual_start
 
         # === Display Wallets ===
-        st.sidebar.metric("💰 Real Wallet", f"${real_capital:,.2f}", f"{format_percentage(real_pnl)} today")
-        st.sidebar.metric("🧪 Virtual Wallet", f"${virtual_capital:,.2f}", f"{format_percentage(virtual_pnl)} today")
+        st.sidebar.subheader("💰 Real Wallet")
+        st.sidebar.metric("Total", f"${real_capital:,.2f}")
+        st.sidebar.metric("Available", f"${real.get('available', 0):,.2f}")
+        st.sidebar.metric("Used", f"${real.get('used', 0):,.2f}")
+        st.sidebar.metric("PnL", format_currency(real_pnl), f"{format_percentage(real_pnl)} today")
+
+        st.sidebar.subheader("🧪 Virtual Wallet")
+        st.sidebar.metric("Total", f"${virtual_capital:,.2f}")
+        st.sidebar.metric("Available", f"${virtual.get('available', 0):,.2f}")
+        st.sidebar.metric("Used", f"${virtual.get('used', 0):,.2f}")
+        st.sidebar.metric("PnL", format_currency(virtual_pnl), f"{format_percentage(virtual_pnl)} today")
+
 
         # === Trading Status based on MAX_LOSS_PCT threshold ===
         max_loss_pct = float(trading_engine.default_settings.get("MAX_LOSS_PCT", -15.0))

@@ -15,7 +15,7 @@ def render(trading_engine, dashboard):
             mode = st.radio("Mode", ["All", "Real", "Virtual"], key=f"mode_{i}", horizontal=True)
 
             # === Load trades based on tab and mode ===
-            if i == 0:
+            if i == 0:  # All
                 trades = trading_engine.get_recent_trades(limit=100) or []
             else:
                 if mode == "All":
@@ -37,7 +37,7 @@ def render(trading_engine, dashboard):
                         trading_engine.get_closed_virtual_trades()
                     )
 
-            # === Load capital based on mode ===
+            # === Load capital ===
             if mode == "All":
                 balances = trading_engine.load_capital("all") or {}
                 real = balances.get("real", {})
@@ -84,7 +84,6 @@ def render(trading_engine, dashboard):
 
             # === Charts and Stats ===
             left, right = st.columns([2, 1])
-
             with left:
                 st.subheader("📈 Assets Analysis")
                 if trades:
@@ -101,9 +100,44 @@ def render(trading_engine, dashboard):
                 else:
                     st.info("No statistics available.")
 
-            # === Trades Table ===
+            st.markdown("---")
+
+            # === Trades Table or Manual UI ===
             st.subheader("🧾 Trades Table")
-            if trades:
-                dashboard.display_trades_table(trades)
-            else:
+
+            # Format for display
+            formatted_trades = dashboard.format_trades(trades)
+
+            if not formatted_trades:
                 st.info("No trades found.")
+                continue
+
+            # === Pagination ===
+            page_size = 10
+            total = len(formatted_trades)
+            page_num = st.number_input("Page", min_value=1, max_value=(total - 1) // page_size + 1, step=1, key=f"page_{i}")
+            start = (page_num - 1) * page_size
+            end = start + page_size
+            paginated_trades = formatted_trades[start:end]
+
+            # === Virtual Open Trade Closing Buttons ===
+            if i == 1 and mode == "Virtual":
+                for trade in paginated_trades:
+                    with st.expander(f"{trade['Symbol']} | {trade['Side']} | Entry: {trade['Entry']}"):
+                        cols = st.columns(4)
+                        cols[0].markdown(f"**Qty:** {trade['Qty']}")
+                        cols[1].markdown(f"**SL:** {trade['SL']}")
+                        cols[2].markdown(f"**TP:** {trade['TP']}")
+                        cols[3].markdown(f"**PnL:** {trade['PnL']}")
+                        st.markdown(f"**Status:** {trade['Status']}  &nbsp;&nbsp; ⏱ `{trade['Time']}`")
+
+                        if trade["Status"].lower() == "open":
+                            if st.button("❌ Close Trade", key=f"close_{trade['Symbol']}_{trade['Time']}"):
+                                success = trading_engine.close_virtual_trade(trade.get("id"))
+                                if success:
+                                    st.success("Trade closed successfully.")
+                                    st.experimental_rerun()
+                                else:
+                                    st.error("Failed to close trade.")
+            else:
+                dashboard.display_trades_table(paginated_trades)
