@@ -8,7 +8,7 @@ def render(trading_engine, dashboard):
 
     # === Load available symbols from DB or your own data source ===
     try:
-        symbols = trading_engine.get_tracked_symbols()  # Replace with your method
+        symbols = trading_engine.get_usdt_symbols()  # Replace with your method
     except Exception as e:
         st.error(f"Error fetching symbols: {e}")
         return
@@ -34,7 +34,7 @@ def render(trading_engine, dashboard):
     # === Load historical candle data from your DB ===
     with st.spinner("Loading chart data…"):
         try:
-            df = trading_engine.get_historical_candles(symbol=selected_symbol, timeframe=timeframe, limit=limit)
+            df = trading_engine.get_usdt_symbols(symbol=selected_symbol, timeframe=timeframe, limit=limit)
             if df is None or df.empty:
                 st.warning("No historical data found for this symbol/timeframe.")
                 return
