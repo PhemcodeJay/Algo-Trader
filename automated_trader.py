@@ -7,6 +7,17 @@ import bybit_client
 from engine import TradingEngine
 from utils import calculate_drawdown
 
+# Logging configuration (placed before other imports to catch early logs)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("automated_trader.log", encoding="utf-8"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
 class AutomatedTrader:
     def __init__(self):
         self.engine = TradingEngine()
@@ -32,15 +43,6 @@ class AutomatedTrader:
             "failed_trades": 0,
             "total_pnl": 0.0,
         }
-
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s - %(levelname)s - %(message)s",
-            handlers=[
-                logging.FileHandler("automated_trader.log", encoding="utf-8"),
-                logging.StreamHandler()
-            ]
-        )
         self.logger = logging.getLogger(__name__)
 
     def get_today_trades(self):

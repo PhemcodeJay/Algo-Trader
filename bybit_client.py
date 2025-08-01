@@ -76,7 +76,7 @@ class BybitClient:
         try:
             with open("capital.json", "r") as f:
                 self.virtual_wallet = json.load(f)
-                logger.info("[BybitClient] ✅ Loaded virtual wallet from capital.json")
+                logger.info("[BybitClient] ✅ Loaded virtual wallet from JSON")
         except (FileNotFoundError, json.JSONDecodeError) as e:
             logger.error("❌ Error loading capital.json: %s", e)
             self.virtual_wallet = {}
@@ -119,28 +119,52 @@ class BybitClient:
         ]
 
     def get_balance(self, coin: str = "USDT") -> dict:
-        if self.client is None:
-            return {
-                "capital": float(self.virtual_wallet.get("capital", 100.0)),
-                "currency": self.virtual_wallet.get("currency", coin)
-            }
+        if self.use_real:
+            # Real trading: call Bybit API
+            response = self._send_request("wallet_balance", {"coin": coin})
+            data = extract_response(response)
+            balance = data.get(coin, {}).get("available", 0.0)
+            return {"capital": float(balance), "currency": coin}
+        else:
+            # Virtual mode: load from capital.json
+            try:
+                with open("capital.json", "r") as f:
+                    capital_data = json.load(f)
+                virtual = capital_data.get("virtual", {})
+                return {
+                    "capital": float(virtual.get("available", 0.0) + virtual.get("used", 0.0)),
+                    "currency": virtual.get("currency", coin)
+                }
+            except Exception as e:
+                return {"capital": 0.0, "currency": coin}
 
-        response = self._send_request("wallet_balance", {"coin": coin})
-        data = extract_response(response)
-        balance = data.get(coin, {}).get("available_balance", 100.0)
-        return {"capital": float(balance), "currency": coin}
     
     def get_wallet_balance(self) -> dict:
         if self.use_real:
+            # Use get_balance for real
             return self.get_balance("USDT")
+        else:
+            # Virtual mode: get detailed virtual wallet info
+            try:
+                with open("capital.json", "r") as f:
+                    capital_data = json.load(f)
+                virtual = capital_data.get("virtual", {})
+                available = float(virtual.get("available", 0.0))
+                used = float(virtual.get("used", 0.0))
+                return {
+                    "available": available,
+                    "used": used,
+                    "equity": available + used,
+                    "currency": virtual.get("currency", "USDT")
+                }
+            except Exception as e:
+                return {
+                    "available": 0.0,
+                    "used": 0.0,
+                    "equity": 0.0,
+                    "currency": "USDT"
+                }
 
-        wallet = self.virtual_wallet.get("virtual", {})
-        return {
-            "available": wallet.get("available", 0.0),
-            "used": wallet.get("used", 0.0),
-            "equity": wallet.get("available", 0.0) + wallet.get("used", 0.0),
-            "currency": self.virtual_wallet.get("currency", "USDT")
-        }
 
     
     def calculate_margin(self, qty: float, price: float, leverage: float) -> float:

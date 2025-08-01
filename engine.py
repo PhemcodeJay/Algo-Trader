@@ -327,9 +327,17 @@ class TradingEngine:
             return []
 
     def load_capital(self, mode: str = "all") -> dict:
-       
         result = {}
 
+        # Load capital.json once
+        try:
+            with open("capital.json", "r") as f:
+                data = json.load(f)
+        except Exception as e:
+            logger.warning(f"[Engine] ⚠️ Failed to load capital.json: {e}")
+            data = {}
+
+        # Load real capital
         if mode in ("all", "real"):
             real_data = {"capital": 0.0, "currency": "USD", "start_balance": 100.0}
             if self.client and hasattr(self.client, "get_balance"):
@@ -345,27 +353,34 @@ class TradingEngine:
                         logger.warning("[Engine] ⚠️ Unexpected structure in real get_balance().")
                 except Exception as e:
                     logger.warning(f"[Engine] ⚠️ Real capital fetch failed: {e}")
+            else:
+                # Fallback to capital.json real section if available
+                json_real = data.get("real", {})
+                real_data = {
+                    "capital": float(json_real.get("available", 100.0) + json_real.get("used", 0.0)),
+                    "currency": json_real.get("currency", "USD"),
+                    "start_balance": float(json_real.get("start_balance", 100.0)),
+                }
+
             if mode == "real":
                 return real_data
             result["real"] = real_data
 
+        # Load virtual capital
         if mode in ("all", "virtual"):
             virtual_data = {"capital": 0.0, "currency": "USD", "start_balance": 100.0}
-            try:
-                with open("capital.json", "r") as f:
-                    data = json.load(f)
-                    virtual_data = {
-                        "capital": float(data.get("capital", 100.0)),
-                        "currency": data.get("currency", "USD"),
-                        "start_balance": float(data.get("start_balance", 100.0)),
-                    }
-            except Exception as e:
-                logger.warning(f"[Engine] ⚠️ Virtual capital (capital.json) load failed: {e}")
+            json_virtual = data.get("virtual", {})
+            virtual_data = {
+                "capital": float(json_virtual.get("available", 100.0) + json_virtual.get("used", 0.0)),
+                "currency": json_virtual.get("currency", "USD"),
+                "start_balance": float(json_virtual.get("start_balance", 100.0)),
+            }
             if mode == "virtual":
                 return virtual_data
             result["virtual"] = virtual_data
 
         return result
+
 
     def get_daily_pnl(self):
         if hasattr(self.db, "get_daily_pnl_pct"):
