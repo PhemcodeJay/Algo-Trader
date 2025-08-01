@@ -2,6 +2,7 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 import os
 import sys
+import pandas as pd
 import time
 import json
 import logging
@@ -47,6 +48,13 @@ class TradingEngine:
 
     def reset_to_defaults(self):
         self.db.reset_all_settings_to_defaults()
+
+    def get_ohlcv(self, symbol: str, timeframe: str, limit: int):
+        
+        raw_data = self.client.get_chart_data(symbol=symbol, interval=timeframe, limit=limit)
+        if not raw_data:
+            return None
+        return pd.DataFrame(raw_data)
 
     def save_signal_pdf(self, signals: list[dict]):
         if not signals:

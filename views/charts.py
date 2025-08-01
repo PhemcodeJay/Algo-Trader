@@ -34,7 +34,7 @@ def render(trading_engine, dashboard):
     # === Load historical candle data from your DB ===
     with st.spinner("Loading chart data…"):
         try:
-            df = trading_engine.get_usdt_symbols(symbol=selected_symbol, timeframe=timeframe, limit=limit)
+            df = trading_engine.get_ohlcv(symbol=selected_symbol, timeframe=timeframe, limit=limit)
             if df is None or df.empty:
                 st.warning("No historical data found for this symbol/timeframe.")
                 return
