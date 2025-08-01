@@ -264,7 +264,7 @@ class TradingEngine:
         self.save_trade_pdf(trades)
 
         if not getattr(self.client, "use_real", False) and hasattr(self.client, "monitor_virtual_orders"):
-            self.client.monitor_virtual_orders()
+            self.client.monitor_virtual_orders() # type: ignore
 
         return top_signals
 
