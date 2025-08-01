@@ -339,15 +339,15 @@ class TradingEngine:
 
         # Load real capital
         if mode in ("all", "real"):
-            real_data = {"capital": 0.0, "currency": "USD", "start_balance": 100.0}
+            real_data = {"capital": 0.0, "currency": "USD", "start_balance": 0.0}
             if self.client and hasattr(self.client, "get_balance"):
                 try:
                     balance = self.client.get_balance()
                     if isinstance(balance, dict):
                         real_data = {
-                            "capital": float(balance.get("capital", 100.0)),
+                            "capital": float(balance.get("capital", 0.0)),
                             "currency": balance.get("currency", "USD"),
-                            "start_balance": float(balance.get("start_balance", 100.0)),
+                            "start_balance": float(balance.get("start_balance", 0.0)),
                         }
                     else:
                         logger.warning("[Engine] ⚠️ Unexpected structure in real get_balance().")
@@ -357,9 +357,9 @@ class TradingEngine:
                 # Fallback to capital.json real section if available
                 json_real = data.get("real", {})
                 real_data = {
-                    "capital": float(json_real.get("available", 100.0) + json_real.get("used", 0.0)),
+                    "capital": float(json_real.get("available", 0.0) + json_real.get("used", 0.0)),
                     "currency": json_real.get("currency", "USD"),
-                    "start_balance": float(json_real.get("start_balance", 100.0)),
+                    "start_balance": float(json_real.get("start_balance", 0.0)),
                 }
 
             if mode == "real":
