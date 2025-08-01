@@ -166,7 +166,7 @@ class TradingEngine:
                     "signal_type": enhanced.get("Side", ""),
                     "score": enhanced.get("score", 0.0),
                     "indicators": indicators_clean,
-                    "strategy": enhanced.get("strategy", "Default"),
+                    "strategy": enhanced.get("strategy", "Auto"),
                     "side": enhanced.get("Side", "LONG"),
                     "sl": enhanced.get("SL"),
                     "tp": enhanced.get("TP"),
@@ -382,10 +382,30 @@ class TradingEngine:
         return result
 
 
-    def get_daily_pnl(self):
-        if hasattr(self.db, "get_daily_pnl_pct"):
-            return self.db.get_daily_pnl_pct()
-        return None
+    def get_daily_pnl(self, mode="real") -> float:
+        trades = []
+        if mode == "real":
+            trades = self.get_closed_real_trades()
+        elif mode == "virtual":
+            trades = self.get_closed_virtual_trades()
+        else:
+            trades = self.get_closed_real_trades() + self.get_closed_virtual_trades()
+
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+        def get_attr(t, attr, default=None):
+            if isinstance(t, dict):
+                return t.get(attr, default)
+            return getattr(t, attr, default)
+
+        daily_pnl = sum(
+            float(get_attr(t, "pnl", 0.0) or 0.0)
+            for t in trades
+            if isinstance(get_attr(t, "timestamp"), str) and get_attr(t, "timestamp", "").startswith(today)
+        )
+
+        return daily_pnl
+
 
     def calculate_win_rate(self, trades: List[Union[dict, Any]]) -> float:
         def get_pnl(trade: Union[dict, Any]) -> Union[float, int, None]:
