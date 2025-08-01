@@ -38,7 +38,7 @@ def render(trading_engine, dashboard):
                 virtual = balances.get("virtual", {})
                 real = balances.get("real", {})
                 capital = virtual.get("capital", 0.0) + real.get("capital", 0.0)
-                start_balance = virtual.get("start_balance", 100.0) + real.get("start_balance", 100.0)
+                start_balance = virtual.get("start_balance", 100.0) + real.get("start_balance", 0.0)
                 currency = virtual.get("currency", "USD")  # Assuming same currency
             else:
                 balance = trading_engine.load_capital(mode.lower())

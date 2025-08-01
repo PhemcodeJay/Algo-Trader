@@ -74,7 +74,7 @@ def render_sidebar(trading_engine, automated_trader, db_manager):
         # Extract available and used
         real_available = float(real_balance.get("available", 0.0))
         real_used = float(real_balance.get("used", 0.0))
-        virtual_available = float(virtual_balance.get("available", 0.0))
+        virtual_available = float(virtual_balance.get("available", 100.0))
         virtual_used = float(virtual_balance.get("used", 0.0))
 
         # Compute capital = available + used
