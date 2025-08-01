@@ -161,15 +161,24 @@ class DashboardComponents:
         cumulative = float(start_balance)
 
         for t in trades:
-            pnl = float(t.get('pnl') or 0)
+            pnl = float(getattr(t, 'pnl', 0) or 0)
             cumulative += pnl
             pnl_data.append(cumulative)
+            
             try:
-                dt = datetime.fromisoformat(t.get('timestamp', ''))
+                timestamp = getattr(t, 'timestamp', None)
+                if isinstance(timestamp, str):
+                    dt = datetime.fromisoformat(timestamp)
+                elif isinstance(timestamp, datetime):
+                    dt = timestamp
+                else:
+                    raise ValueError("Invalid timestamp type")
+                
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=timezone.utc)
             except Exception:
                 dt = datetime.now(timezone.utc)
+
             dates.append(dt)
 
         fig = go.Figure(go.Scatter(
@@ -193,7 +202,7 @@ class DashboardComponents:
         running_total = start_balance
 
         for t in trades:
-            pnl = float(t.get('pnl') or 0)
+            pnl = float(getattr(t, 'pnl', 0) or 0)
             running_total += pnl
             cumulative.append(running_total)
             daily_pnl.append(pnl)

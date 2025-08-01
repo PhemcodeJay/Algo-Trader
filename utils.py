@@ -76,11 +76,15 @@ def score_signal(df: pd.DataFrame) -> float:
     return round(score / 5 * 100, 2)
 
 
-def format_currency(value: Optional[float]) -> str:
-    if value is None:
-        value = 0.0
-    return f"${value:,.2f}"
+def format_currency(value):
+    try:
+        return f"{float(value):,.2f}"
+    except (ValueError, TypeError):
+        return "0.00"
 
+def get_trade_attr(trade, key, default=None):
+    """Safely get attribute from object or dict."""
+    return getattr(trade, key, default) if hasattr(trade, key) else trade.get(key, default)
 
 def format_percentage(value: Optional[float]) -> str:
     if value is None:

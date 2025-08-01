@@ -1,9 +1,14 @@
 import streamlit as st
 from datetime import datetime, timezone
 
+
 def render(trading_engine, dashboard):
     st.image("logo.png", width=80)
     st.title("💼 Wallet Summary")
+
+    # Helper for safe attribute/dict access
+    def get_attr(t, attr, default=None):
+        return t.get(attr, default) if isinstance(t, dict) else getattr(t, attr, default)
 
     tabs = st.tabs(["🔄 All Trades", "📂 Open Trades", "✅ Closed Trades"])
 
@@ -49,29 +54,20 @@ def render(trading_engine, dashboard):
             win_rate = trading_engine.calculate_win_rate(trades)
             today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-            # Daily PnL from today’s trades
-            def get_attr(t, attr, default=None):
-                return t.get(attr, default) if isinstance(t, dict) else getattr(t, attr, default)
-
+            # === Daily PnL ===
             daily_pnl = sum(
-                float(get_attr(t, "pnl", 0.0) or 0.0)  # Handles None safely
+                float(get_attr(t, "pnl", 0.0) or 0.0)
                 for t in trades
-                if isinstance(get_attr(t, "timestamp", ""), str)
-                and get_attr(t, "timestamp", "").startswith(today_str)
+                if str(get_attr(t, "timestamp", "")).startswith(today_str)
             )
 
-            # PnL metrics depending on tab
-            unrealized_pnl = 0.0
-            realized_pnl = 0.0
+            # === PnL Metrics based on tab ===
+            unrealized_pnl = sum(float(get_attr(t, "unrealized_pnl", 0.0)) for t in trades) if i == 1 else 0.0
+            realized_pnl = sum(float(get_attr(t, "pnl", 0.0)) for t in trades) if i == 2 else 0.0
 
-            if i == 1:  # Open trades
-                unrealized_pnl = sum(float(get_attr(t, "unrealized_pnl", 0.0)) for t in trades)
-            elif i == 2:  # Closed trades
-                realized_pnl = sum(float(get_attr(t, "pnl", 0.0)) for t in trades)
-
-            # === Display metrics ===
+            # === Metrics Display ===
             col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Balance", f"${capital:.2f}", currency)
+            col1.metric("Balance", f"${capital:,.2f}", currency)
             col2.metric("Total Return", f"{total_return_pct:+.2f}%")
             col3.metric("Daily P&L", f"${daily_pnl:+.2f}")
             col4.metric("Win Rate", f"{win_rate:.2f}%")
@@ -88,6 +84,7 @@ def render(trading_engine, dashboard):
 
             # === Charts and Stats ===
             left, right = st.columns([2, 1])
+
             with left:
                 st.subheader("📈 Assets Analysis")
                 if trades:
