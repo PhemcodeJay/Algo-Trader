@@ -67,19 +67,20 @@ def render_sidebar(trading_engine, automated_trader, db_manager):
         real_balance = trading_engine.load_capital(mode="real") or {}
         virtual_balance = trading_engine.load_capital(mode="virtual") or {}
 
-        # Daily PnL (real only for now)
+        # Daily PnL (real and virtual)
         real_pnl = trading_engine.get_daily_pnl(mode="real") or 0.0
         virtual_pnl = trading_engine.get_daily_pnl(mode="virtual") or 0.0
 
-        # Extract available and used
+        # Extract capital and optionally available/used if present
+        real_total = float(real_balance.get("capital", real_balance.get("available", 0.0) + real_balance.get("used", 0.0)))
+        virtual_total = float(virtual_balance.get("capital", virtual_balance.get("available", 100.0) + virtual_balance.get("used", 0.0)))
+
+        # Optional: keep available/used if your UI still needs it
         real_available = float(real_balance.get("available", 0.0))
         real_used = float(real_balance.get("used", 0.0))
         virtual_available = float(virtual_balance.get("available", 100.0))
         virtual_used = float(virtual_balance.get("used", 0.0))
 
-        # Compute capital = available + used
-        real_total = real_available + real_used
-        virtual_total = virtual_available + virtual_used
 
         # Wallet Metrics
         st.sidebar.metric("💰 Real Wallet", format_currency(real_total), f"{format_percentage(real_pnl)} today")

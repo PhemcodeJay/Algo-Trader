@@ -7,12 +7,16 @@ def render(trading_engine, dashboard, db_manager):
     st.title("🚀 AlgoTrader Dashboard")
 
     # === Load real and virtual capital ===
-    real_balance = trading_engine.load_capital(mode="real") or {"available": 100.0, "capital": 100.0}
-    virtual_balance = trading_engine.load_capital(mode="virtual") or {"available": 100.0, "capital": 100.0}
+    real_balance = trading_engine.load_capital(mode="real") or {}
+    virtual_balance = trading_engine.load_capital(mode="virtual") or {}
 
+    # Fallbacks in case 'capital' key is missing
+    real_capital = float(real_balance.get("capital", real_balance.get("available", 0.0) + real_balance.get("used", 0.0)))
+    virtual_capital = float(virtual_balance.get("capital", virtual_balance.get("available", 100.0) + virtual_balance.get("used", 0.0)))
 
-    real_daily_pnl = trading_engine.get_daily_pnl() or 0.0
-    virtual_daily_pnl = 0.0  # Placeholder if virtual PnL tracking not implemented
+    # Daily PnL
+    real_daily_pnl = trading_engine.get_daily_pnl(mode="real") or 0.0
+    virtual_daily_pnl = trading_engine.get_daily_pnl(mode="virtual") or 0.0  # Use real implementation if available
 
     # === Load trades ===
     all_trades = trading_engine.get_recent_trades(limit=100) or []
@@ -30,8 +34,13 @@ def render(trading_engine, dashboard, db_manager):
     # === KPI Metrics ===
     st.markdown("### 📈 Overview")
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("💰 Real Wallet", f"${real_balance.get('available', 0):.2f}", f"{real_daily_pnl:.2f}%")
-    col2.metric("🧪 Virtual Wallet", f"${virtual_balance.get('available', 100):.2f}", f"{virtual_daily_pnl:.2f}%")
+    
+    real_available = float(real_balance.get("available", real_balance.get("capital", 0.0)))
+    virtual_available = float(virtual_balance.get("available", virtual_balance.get("capital", 100.0)))
+
+    col1.metric("💰 Real Wallet", f"${real_available:.2f}", f"{real_daily_pnl:+.2f}%")
+    col2.metric("🧪 Virtual Wallet", f"${virtual_available:.2f}", f"{virtual_daily_pnl:+.2f}%")
+
     col3.metric("📊 Active Signals", len(recent_signals), "Recent")
     col4.metric("📅 Today's Real Trades", len([
         t for t in real_trades if t.get("timestamp", "").startswith(today_str)

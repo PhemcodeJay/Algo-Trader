@@ -32,6 +32,7 @@ class TradingEngine:
         self.db = db.db
         self.ml = MLFilter()
         self.signal_generator = signal_generator
+        self.capital_file = "capital.json"
 
     def get_settings(self):
         scan_interval = self.db.get_setting("SCAN_INTERVAL")
@@ -326,60 +327,57 @@ class TradingEngine:
             logger.error(f"[Engine] Failed to fetch trades: {e}")
             return []
 
-    def load_capital(self, mode: str = "all") -> dict:
-        result = {}
-
-        # Load capital.json once
-        try:
-            with open("capital.json", "r") as f:
-                data = json.load(f)
-        except Exception as e:
-            logger.warning(f"[Engine] ⚠️ Failed to load capital.json: {e}")
-            data = {}
-
-        # Load real capital
-        if mode in ("all", "real"):
-            real_data = {"capital": 0.0, "currency": "USD", "start_balance": 0.0}
-            if self.client and hasattr(self.client, "get_balance"):
-                try:
-                    balance = self.client.get_balance()
-                    if isinstance(balance, dict):
-                        real_data = {
-                            "capital": float(balance.get("capital", 0.0)),
-                            "currency": balance.get("currency", "USD"),
-                            "start_balance": float(balance.get("start_balance", 0.0)),
-                        }
-                    else:
-                        logger.warning("[Engine] ⚠️ Unexpected structure in real get_balance().")
-                except Exception as e:
-                    logger.warning(f"[Engine] ⚠️ Real capital fetch failed: {e}")
-            else:
-                # Fallback to capital.json real section if available
-                json_real = data.get("real", {})
-                real_data = {
-                    "capital": float(json_real.get("available", 0.0) + json_real.get("used", 0.0)),
-                    "currency": json_real.get("currency", "USD"),
-                    "start_balance": float(json_real.get("start_balance", 0.0)),
+    def load_capital(self, mode: str = "virtual") -> dict:
+        """Load capital from JSON file."""
+        if not os.path.exists(self.capital_file):
+            # Initialize if missing
+            initial_data = {
+                "real": {
+                    "capital": 0.0,
+                    "start_balance": 0.0,
+                    "currency": "USD"
+                },
+                "virtual": {
+                    "capital": 100.0,
+                    "start_balance": 100.0,
+                    "currency": "USD"
                 }
-
-            if mode == "real":
-                return real_data
-            result["real"] = real_data
-
-        # Load virtual capital
-        if mode in ("all", "virtual"):
-            virtual_data = {"capital": 0.0, "currency": "USD", "start_balance": 100.0}
-            json_virtual = data.get("virtual", {})
-            virtual_data = {
-                "capital": float(json_virtual.get("available", 100.0) + json_virtual.get("used", 0.0)),
-                "currency": json_virtual.get("currency", "USD"),
-                "start_balance": float(json_virtual.get("start_balance", 100.0)),
             }
-            if mode == "virtual":
-                return virtual_data
-            result["virtual"] = virtual_data
+            self._save_all_capital(initial_data)
 
-        return result
+        with open(self.capital_file, "r") as f:
+            all_capital = json.load(f)
+
+        if mode.lower() == "all":
+            return all_capital
+        return all_capital.get(mode.lower(), {})
+
+    def save_capital(self, mode: str, data: dict):
+        """Update capital JSON file for a specific mode."""
+        mode = mode.lower()
+        if mode not in ["real", "virtual"]:
+            raise ValueError("Mode must be 'real' or 'virtual'.")
+
+        # Load existing
+        all_capital = {}
+        if os.path.exists(self.capital_file):
+            with open(self.capital_file, "r") as f:
+                all_capital = json.load(f)
+
+        # Update mode section
+        all_capital[mode] = {
+            "capital": data.get("capital", 0.0),
+            "start_balance": data.get("start_balance", 0.0),
+            "currency": data.get("currency", "USD")
+        }
+
+        # Save back
+        self._save_all_capital(all_capital)
+
+    def _save_all_capital(self, data: dict):
+        """Write entire capital.json"""
+        with open(self.capital_file, "w") as f:
+            json.dump(data, f, indent=4)
 
 
     def get_daily_pnl(self, mode="real") -> float:
