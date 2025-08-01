@@ -8,7 +8,7 @@
     },
     "virtual": {
         "capital": 100.0,
-        "available": 10.0,
+        "available": 100.0,
         "used": 0.0,
         "start_balance": 100.0,
         "currency": "USDT"
