@@ -179,114 +179,153 @@ class BybitClient:
             logger.error(f"❌ Failed to save capital.json: {e}")
             
 
-    def place_order(self, symbol: str, side: str, order_type: str, qty: float, price: Optional[float] = None,
-                time_in_force: Optional[str] = "GoodTillCancel", reduce_only: bool = False,
-                close_on_trigger: bool = False, order_link_id: Optional[str] = None) -> Dict[str, Any]:
+    def place_order(
+        self,
+        symbol: str,
+        side: str,
+        order_type: str,
+        qty: float,
+        price: Optional[float] = None,
+        time_in_force: Optional[str] = "GoodTillCancel",
+        reduce_only: bool = False,
+        close_on_trigger: bool = False,
+        order_link_id: Optional[str] = None
+    ) -> Dict[str, Any]:
 
-            if self.use_real and self.client:
-                params: Dict[str, Any] = {
-                    "symbol": symbol,
-                    "side": side,
-                    "order_type": order_type,
-                    "qty": qty,
-                    "time_in_force": time_in_force,
-                    "reduce_only": reduce_only,
-                    "close_on_trigger": close_on_trigger,
-                }
-                if price is not None:
-                    params["price"] = price
-                if order_link_id:
-                    params["order_link_id"] = order_link_id
-                response = self._send_request("place_active_order", params)
-                return extract_response(response)
+        # ============================
+        # ✅ Real Trading Mode
+        # ============================
+        if self.use_real and self.client:
+            if order_link_id:
+                try:
+                    open_orders = self._send_request("get_open_orders", {"symbol": symbol})
+                    open_orders_data = extract_response(open_orders)
+                    matched_order = next(
+                        (o for o in open_orders_data.get("list", []) if o.get("order_link_id") == order_link_id),
+                        None
+                    )
 
-            # Virtual mode
-            price_used = price or 1.0
-            leverage = 20
-            margin = self.calculate_margin(qty, price_used, leverage)
-            wallet = self.virtual_wallet.get("virtual", {})
-            available_capital = wallet.get("available", 0)
+                    if matched_order:
+                        # Amend existing order
+                        amend_params = {
+                            "symbol": symbol,
+                            "order_link_id": order_link_id,
+                            "qty": qty
+                        }
+                        if price is not None:
+                            amend_params["price"] = price
 
-            # Check for existing virtual order
-            existing_order = next((o for o in self._virtual_orders if o["symbol"] == symbol and o["side"] == side and o["status"] == "open"), None)
+                        response = self._send_request("amend_active_order", amend_params)
+                        return extract_response(response)
 
-            if existing_order:
-                # Modify existing order: calculate new margin difference
-                old_margin = existing_order["margin"]
-                margin_diff = margin - old_margin
+                except Exception as e:
+                    logger.warning(f"[Real] ⚠️ Failed to amend order with link_id={order_link_id}: {e}")
 
-                if margin_diff > available_capital:
-                    logger.warning(f"[Virtual] ❌ Not enough capital to modify order. Needed: {margin_diff}, Available: {available_capital}")
-                    return {"error": "Insufficient virtual capital for modification"}
-
-                # Update wallet balances
-                wallet["available"] -= margin_diff
-                wallet["used"] += margin_diff
-                self.virtual_wallet["virtual"] = wallet
-                self._save_virtual_wallet()
-
-                # Modify the existing order
-                existing_order.update({
-                    "qty": qty,
-                    "price": price,
-                    "margin": margin,
-                    "update_time": datetime.utcnow()
-                })
-
-                # Update corresponding virtual position
-                for pos in self._virtual_positions:
-                    if pos["order_id"] == existing_order["order_id"]:
-                        pos.update({
-                            "qty": qty,
-                            "price": price or 0.0,
-                            "margin": margin,
-                            "update_time": datetime.utcnow()
-                        })
-                        break
-
-                return {"message": "Virtual order modified", "order": existing_order}
-
-            # No existing order found: check capital
-            if margin > available_capital:
-                logger.warning(f"[Virtual] ❌ Not enough capital. Needed: {margin}, Available: {available_capital}")
-                return {"error": "Insufficient virtual capital"}
-
-            # Close existing position and apply PnL
-            closed_pos = self.close_virtual_position(symbol)
-            pnl = closed_pos.get("realized_pnl", 0) if closed_pos else 0
-            wallet["available"] = wallet.get("available", 0) - margin + pnl
-            wallet["used"] = wallet.get("used", 0) + margin
-            self.virtual_wallet["virtual"] = wallet
-            self._save_virtual_wallet()
-
-            # Create new order
-            order_id = f"virtual_{int(time.time() * 1000)}"
-            virtual_order = {
-                "order_id": order_id,
+            # === Place new order ===
+            params: Dict[str, Any] = {
                 "symbol": symbol,
                 "side": side,
                 "order_type": order_type,
                 "qty": qty,
-                "price": price,
-                "status": "open",
-                "margin": margin,
-                "leverage": leverage,
-                "create_time": datetime.utcnow()
+                "time_in_force": time_in_force,
+                "reduce_only": reduce_only,
+                "close_on_trigger": close_on_trigger,
             }
-            self._virtual_orders.append(virtual_order)
+            if price is not None:
+                params["price"] = price
+            if order_link_id:
+                params["order_link_id"] = order_link_id
 
-            self._virtual_positions.append({
-                "symbol": symbol,
-                "side": side,
+            response = self._send_request("place_active_order", params)
+            return extract_response(response)
+
+        # ============================
+        # ✅ Virtual Trading Mode
+        # ============================
+        price_used = price or 1.0
+        leverage = 20
+        margin = self.calculate_margin(qty, price_used, leverage)
+        wallet = self.virtual_wallet.get("virtual", {})
+        available_capital = wallet.get("available", 0)
+
+        # Check for existing virtual order
+        existing_order = next(
+            (o for o in self._virtual_orders if o["symbol"] == symbol and o["side"] == side and o["status"] == "open"),
+            None
+        )
+
+        if existing_order:
+            old_margin = existing_order["margin"]
+            margin_diff = margin - old_margin
+
+            if margin_diff > available_capital:
+                logger.warning(f"[Virtual] ❌ Not enough capital to modify order. Needed: {margin_diff}, Available: {available_capital}")
+                return {"error": "Insufficient virtual capital for modification"}
+
+            wallet["available"] -= margin_diff
+            wallet["used"] += margin_diff
+            self.virtual_wallet["virtual"] = wallet
+            self._save_virtual_wallet()
+
+            existing_order.update({
                 "qty": qty,
-                "price": price or 0.0,
+                "price": price,
                 "margin": margin,
-                "status": "open",
-                "create_time": datetime.utcnow(),
-                "order_id": order_id
+                "update_time": datetime.utcnow()
             })
 
-            return virtual_order
+            for pos in self._virtual_positions:
+                if pos["order_id"] == existing_order["order_id"]:
+                    pos.update({
+                        "qty": qty,
+                        "price": price or 0.0,
+                        "margin": margin,
+                        "update_time": datetime.utcnow()
+                    })
+                    break
+
+            return {"message": "Virtual order modified", "order": existing_order}
+
+        # No existing virtual order — create new one
+        if margin > available_capital:
+            logger.warning(f"[Virtual] ❌ Not enough capital. Needed: {margin}, Available: {available_capital}")
+            return {"error": "Insufficient virtual capital"}
+
+        closed_pos = self.close_virtual_position(symbol)
+        pnl = closed_pos.get("realized_pnl", 0) if closed_pos else 0
+        wallet["available"] = wallet.get("available", 0) - margin + pnl
+        wallet["used"] = wallet.get("used", 0) + margin
+        self.virtual_wallet["virtual"] = wallet
+        self._save_virtual_wallet()
+
+        order_id = f"virtual_{int(time.time() * 1000)}"
+        virtual_order = {
+            "order_id": order_id,
+            "symbol": symbol,
+            "side": side,
+            "order_type": order_type,
+            "qty": qty,
+            "price": price,
+            "status": "open",
+            "margin": margin,
+            "leverage": leverage,
+            "create_time": datetime.utcnow()
+        }
+        self._virtual_orders.append(virtual_order)
+
+        self._virtual_positions.append({
+            "symbol": symbol,
+            "side": side,
+            "qty": qty,
+            "price": price or 0.0,
+            "margin": margin,
+            "status": "open",
+            "create_time": datetime.utcnow(),
+            "order_id": order_id
+        })
+
+        return virtual_order
+
 
                 
     def get_open_positions(self) -> List[Dict[str, Any]]:

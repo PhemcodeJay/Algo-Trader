@@ -145,32 +145,36 @@ class AutomatedTrader:
 
     def automation_cycle(self):
         start_time = datetime.now()
+
         while self.is_running:
             try:
                 now = datetime.now()
 
-                # Stop after 1 hour
+                # ⏱️ Stop automation after 1 hour
                 if (now - start_time).total_seconds() >= 3600:
                     self.logger.info("🕒 Automation session completed: 1 hour elapsed.")
                     break
 
+                # 🕰️ Time to run a new signal scan
                 if not self.last_run_time or (now - self.last_run_time).total_seconds() >= self.signal_interval:
                     self.logger.info("⚙️ Starting automation cycle...")
 
                     if not self.check_risk_limits():
                         self.logger.info("⛔ Risk limits triggered. Sleeping for 1 hour with countdown.")
+
                         for remaining in range(60, 0, -1):  # 60 minutes
                             if not self.is_running:
-                                break
+                                self.logger.info("🛑 Automation stopped manually during risk cooldown.")
+                                return
                             self.logger.info(f"⏳ Sleeping... {remaining} minute(s) remaining.")
                             time.sleep(60)
                         continue
 
-                    raw_signals = self.engine.run_once()
+                    # ✅ Run signal engine
+                    raw_signals = self.engine.run_once() or []
                     valid_symbols = {s["symbol"] for s in self.client.get_symbols()}
-                    top_signals = []
 
-                    # 🚀 Load capital at start of cycle
+                    top_signals = []
                     capital = self.get_available_capital()
 
                     for signal in raw_signals:
@@ -196,11 +200,12 @@ class AutomatedTrader:
                             continue
 
                         top_signals.append(signal)
-                        capital -= margin_required  # 🧠 Reserve capital after signal
+                        capital -= margin_required  # 🧠 Reserve capital
 
                         if len(top_signals) >= self.max_signals:
                             break
 
+                    # 📊 Update stats
                     self.stats["signals_generated"] += len(top_signals)
                     self.stats["last_update"] = now.isoformat()
 
