@@ -55,6 +55,10 @@ class TradingEngine:
         if not raw_data:
             return None
         return pd.DataFrame(raw_data)
+    
+    def get_usdt_symbols(self):
+        """Return list of tradable USDT symbols."""
+        return get_usdt_symbols()
 
     def save_signal_pdf(self, signals: list[dict]):
         if not signals:
