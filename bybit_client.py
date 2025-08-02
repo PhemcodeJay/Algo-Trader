@@ -253,7 +253,7 @@ class BybitClient:
                 "symbol": symbol,
                 "side": side,
                 "order_type": order_type,
-                "qty": qty,
+                "qty": formatted_qty,
                 "time_in_force": time_in_force,
                 "reduce_only": reduce_only,
                 "close_on_trigger": close_on_trigger,
