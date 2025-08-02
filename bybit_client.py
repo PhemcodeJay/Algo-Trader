@@ -2,7 +2,7 @@ import os
 import json
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, Tuple, Union, List, cast
 import requests
 from requests.structures import CaseInsensitiveDict
@@ -181,6 +181,23 @@ class BybitClient:
             logger.error(f"❌ Failed to save capital.json: {e}")
             
 
+    def get_qty_step(self, symbol: str) -> float:
+        if not self.client:
+            return 1.0
+
+        try:
+            result = self.client.get_instruments_info(category="linear", symbol=symbol)
+            if isinstance(result, tuple):
+                result = result[0]  # Get just the response dict
+
+            instruments = result.get("result", {}).get("list", [])
+            if instruments:
+                qty_step = instruments[0].get("lotSizeFilter", {}).get("qtyStep")
+                return float(qty_step)
+        except Exception as e:
+            logger.error(f"Failed to fetch qtyStep for {symbol}: {e}")
+        return 1.0
+
     def place_order(
         self,
         symbol: str,
@@ -208,7 +225,6 @@ class BybitClient:
                     )
 
                     if matched_order:
-                        # Amend existing order
                         amend_params = {
                             "symbol": symbol,
                             "order_link_id": order_link_id,
@@ -223,7 +239,15 @@ class BybitClient:
                 except Exception as e:
                     logger.warning(f"[Real] ⚠️ Failed to amend order with link_id={order_link_id}: {e}")
 
-            # === Place new order ===
+            # ✅ Round qty according to Bybit step size
+            qty_step = self.get_qty_step(symbol)
+            # Adjust and round to correct step size
+            qty = round(float(qty) / qty_step) * qty_step  # qty is still float here
+
+            # When preparing the params for Bybit API (which requires str):
+            formatted_qty = f"{qty:.{str(qty_step)[::-1].find('.')}f}"
+
+
             params: Dict[str, Any] = {
                 "category": "linear",
                 "symbol": symbol,
@@ -241,6 +265,7 @@ class BybitClient:
 
             response = self._send_request("place_order", params)
             return extract_response(response)
+
 
         # ============================
         # ✅ Virtual Trading Mode
