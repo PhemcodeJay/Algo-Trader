@@ -260,10 +260,10 @@ class BybitClient:
                 params["order_link_id"] = order_link_id
 
             response = self._send_request("place_order", params)
-            data = extract_response(response)
+            data, *_ = extract_response(response)  # Unpack the tuple
+            result = data.get("result", {})
+            order_id = result.get("orderId") or result.get("order_id")
 
-            # 🚨 Check if orderId exists
-            order_id = data.get("order_id") or data.get("orderId")
             if not order_id:
                 logger.warning(f"[Real] ⚠️ No order_id returned: {response}")
                 return {"success": False, "message": "No order ID returned", "response": response}
