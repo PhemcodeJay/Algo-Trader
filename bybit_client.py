@@ -83,16 +83,19 @@ class BybitClient:
             logger.error("❌ Error loading capital.json: %s", e)
             self.virtual_wallet = {}
 
-    def _send_request(
-        self,
-        method: str,
-        params: Optional[Dict[str, Any]] = None
-    ) -> Tuple[Dict[str, Any], timedelta, CaseInsensitiveDict]:
+    def _send_request(self, method: str, params: Optional[Dict[str, Any]] = None) -> Tuple[Dict[str, Any], timedelta, CaseInsensitiveDict]:
         if self.client is None:
             logger.error("[BybitClient] ❌ Client not initialized.")
             return {}, timedelta(), CaseInsensitiveDict()
 
-        method_func = getattr(self.client, method, None)
+        # NEW: Special-case nested methods
+        if method == "get_orders":
+            method_func = getattr(self.client.order, "get_orders", None)
+        elif method == "get_order":
+            method_func = getattr(self.client.order, "get_order", None)
+        else:
+            method_func = getattr(self.client, method, None)
+
         if not callable(method_func):
             logger.error(f"[BybitClient] ❌ Method '{method}' not found on client.")
             return {}, timedelta(), CaseInsensitiveDict()
@@ -317,7 +320,7 @@ class BybitClient:
 
             try:
                 time.sleep(0.5)
-                status_resp = self._send_request("get_order", {"category": "linear", "orderId": order_id})
+                status_resp = self._send_request("get_orders", {"category": "linear", "orderId": order_id})
                 order_info = extract_response(status_resp)
 
                 if not isinstance(order_info, dict):
@@ -600,9 +603,9 @@ class BybitClient:
     def get_open_positions(self) -> List[Dict[str, Any]]:
         return [pos for pos in self._virtual_positions if pos["status"] == "open"]
     
-    def get_order(self, order_id: str, symbol: str, category: str = "linear") -> dict:
+    def get_orders(self, order_id: str, symbol: str, category: str = "linear") -> dict:
         return self._send_request(
-            "get_order",  # ✅ Match the key in your _endpoint_map
+            "get_orders",  # ✅ Match the key in your _endpoint_map
             {
                 "orderId": order_id,   # ✅ Use camelCase to match Bybit V5 API
                 "symbol": symbol,

@@ -131,7 +131,7 @@ def render(trading_engine, dashboard):
             # === Virtual Open Trade Closing Buttons ===
             if i == 1 and mode == "Virtual":
                 for trade in paginated_trades:
-                    with st.expander(f"{trade['Symbol']} | {trade['Side']} | Entry: {trade['Entry']}"):
+                    with st.expander(f"{trade['symbol']} | {trade['Side']} | Entry: {trade['Entry']}"):
                         cols = st.columns(4)
                         cols[0].markdown(f"**Qty:** {trade['Qty']}")
                         cols[1].markdown(f"**SL:** {trade['SL']}")
