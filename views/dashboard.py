@@ -35,8 +35,8 @@ def render(trading_engine, dashboard, db_manager):
     st.markdown("### 📈 Overview")
     col1, col2, col3, col4 = st.columns(4)
 
-    col1.metric("💰 Real Wallet", format_currency(real_total), f"Available: {format_currency(real_available)}")
-    col2.metric("🧪 Virtual Wallet", format_currency(virtual_total), f"Available: {format_currency(virtual_available)}")
+    col1.metric("💰 Real Wallet", format_currency(real_available), f"Total: {format_currency(real_total)}")
+    col2.metric("🧪 Virtual Wallet", format_currency(virtual_available), f"Total: {format_currency(virtual_total)}")
     col3.metric("📡 Active Signals", len(recent_signals), "Recent")
     col4.metric("📅 Real Trades Today", len([
         t for t in real_trades if str(t.get("timestamp", "")).startswith(today_str)
