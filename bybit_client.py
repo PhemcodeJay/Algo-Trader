@@ -139,18 +139,26 @@ class BybitClient:
 
     def wallet_balance(self, coin: str = "USDT") -> dict:
         if self.use_real:
-            # === Real trading: Call Bybit API ===
-            response, _, _ = self._send_request("get_wallet_balance", {"coin": coin})
+            # === Real trading: Call Bybit API with accountType ===
+            response, _, _ = self._send_request("get_wallet_balance", {
+                "accountType": "UNIFIED",   # or "CONTRACT" / "SPOT" depending on your setup
+                "coin": coin
+            })
+
             if not response:
                 logger.warning("[BybitClient] ⚠️ No wallet balance response received.")
                 return {"capital": 0.0, "currency": coin}
 
-            balance_info = response.get(coin, {})
-            available = balance_info.get("availableBalance") or balance_info.get("available", 0.0)
-            return {
-                "capital": float(available),
-                "currency": coin
-            }
+            balance_info = response.get("result", {}).get("list", [])
+            if balance_info:
+                coin_balances = balance_info[0].get("coin", [])
+                for c in coin_balances:
+                    if c.get("coin") == coin:
+                        available = c.get("availableToWithdraw", 0.0)
+                        return {"capital": float(available), "currency": coin}
+
+            logger.warning("[BybitClient] ⚠️ Wallet balance for coin not found.")
+            return {"capital": 0.0, "currency": coin}
 
         else:
             # === Virtual mode: Load from capital.json ===
@@ -170,7 +178,6 @@ class BybitClient:
             except Exception as e:
                 logger.exception("[BybitClient] ❌ Failed to load virtual capital.")
                 return {"capital": 0.0, "currency": coin}
-
 
     
     def get_wallet_balance(self) -> dict:
