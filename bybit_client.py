@@ -94,10 +94,29 @@ class BybitClient:
         try:
             with open("capital.json", "r") as f:
                 self.virtual_wallet = json.load(f)
-                logger.info("[BybitClient] ✅ Loaded virtual wallet from JSON")
+                logger.info("[BybitClient] ✅ Loaded virtual wallet from capital.json")
+
         except (FileNotFoundError, json.JSONDecodeError) as e:
-            logger.error("❌ Error loading capital.json: %s", e)
-            self.virtual_wallet = {}
+            logger.warning("[BybitClient] ⚠️ Could not load capital.json: %s", e)
+            # ✅ Fallback to default balance
+            self.virtual_wallet = {
+                "USDT": {
+                    "equity": 1000.0,
+                    "available_balance": 1000.0
+                }
+            }
+            logger.info("[BybitClient] 💰 Initialized default virtual wallet")
+            self._save_virtual_wallet()
+
+        except Exception as e:
+            logger.exception("[BybitClient] ❌ Unexpected error loading virtual wallet: %s", e)
+            self.virtual_wallet = {
+                "USDT": {
+                    "equity": 0.0,
+                    "available_balance": 0.0
+                }
+            }
+
 
     def _send_request(self, method: str, params: Optional[Dict[str, Any]] = None) -> Tuple[Dict[str, Any], timedelta, CaseInsensitiveDict]:
         if self.client is None:
@@ -242,10 +261,10 @@ class BybitClient:
         try:
             with open("capital.json", "w") as f:
                 json.dump(self.virtual_wallet, f, indent=4)
-            logger.info("[BybitClient] 💾 Virtual wallet updated in capital.json")
+            logger.info("[BybitClient] 💾 Virtual wallet saved to capital.json")
         except Exception as e:
-            logger.error(f"❌ Failed to save capital.json: {e}")
-            
+            logger.exception("[BybitClient] ❌ Failed to save virtual wallet: %s", e)
+
 
     def get_qty_step(self, symbol: str) -> float:
         if not self.client:
