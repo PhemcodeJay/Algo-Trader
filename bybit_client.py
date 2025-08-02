@@ -241,12 +241,8 @@ class BybitClient:
 
             # ✅ Round qty according to Bybit step size
             qty_step = self.get_qty_step(symbol)
-            # Adjust and round to correct step size
-            qty = round(float(qty) / qty_step) * qty_step  # qty is still float here
-
-            # When preparing the params for Bybit API (which requires str):
+            qty = round(float(qty) / qty_step) * qty_step
             formatted_qty = f"{qty:.{str(qty_step)[::-1].find('.')}f}"
-
 
             params: Dict[str, Any] = {
                 "category": "linear",
@@ -264,7 +260,54 @@ class BybitClient:
                 params["order_link_id"] = order_link_id
 
             response = self._send_request("place_order", params)
-            return extract_response(response)
+            data = extract_response(response)
+
+            # 🚨 Check if orderId exists
+            order_id = data.get("order_id") or data.get("orderId")
+            if not order_id:
+                logger.warning(f"[Real] ⚠️ No order_id returned: {response}")
+                return {"success": False, "message": "No order ID returned", "response": response}
+
+            try:
+                time.sleep(0.5)
+                status_resp = self._send_request("get_order", {"category": "linear", "orderId": order_id})
+                order_info = extract_response(status_resp)
+
+                if not isinstance(order_info, dict):
+                    logger.warning(f"[Real] ❌ Unexpected order_info type: {type(order_info)} - {order_info}")
+                    return {
+                        "success": False,
+                        "message": "Invalid order info returned",
+                        "order_id": order_id,
+                        "response": order_info
+                    }
+
+                order_status = order_info.get("order_status", "UNKNOWN")
+
+                if order_status in ["New", "PartiallyFilled", "Filled"]:
+                    return {
+                        "success": True,
+                        "message": "Order placed successfully",
+                        "order_id": order_id,
+                        "status": order_status,
+                        "response": data
+                    }
+                else:
+                    logger.warning(f"[Real] ❌ Order not active: {order_info}")
+                    return {
+                        "success": False,
+                        "message": f"Order status is '{order_status}'",
+                        "order_id": order_id,
+                        "response": order_info
+                    }
+            except Exception as e:
+                logger.error(f"[Real] 🚨 Failed to validate order status: {e}")
+                return {
+                    "success": False,
+                    "message": "Exception while checking order status",
+                    "error": str(e),
+                    "response": response
+                }
 
 
         # ============================
