@@ -512,9 +512,17 @@ class BybitClient:
         return virtual_order
 
 
-    def place_tp_sl_limit_orders(self, symbol: str, side: str, entry_price: float, qty: float, order_link_id: Optional[str] = None):
-        tp_multiplier = 1.02
-        sl_multiplier = 0.98
+    def place_tp_sl_limit_orders(
+        self,
+        symbol: str,
+        side: str,
+        entry_price: float,
+        qty: float,
+        order_link_id: Optional[str] = None,
+        order_id: Optional[str] = None
+        ):
+        tp_multiplier = 1.30  # +30%
+        sl_multiplier = 0.85  # -15%
 
         tp_price = round(entry_price * tp_multiplier, 4)
         sl_price = round(entry_price * sl_multiplier, 4)
@@ -522,36 +530,71 @@ class BybitClient:
         opposite_side = "Sell" if side == "Buy" else "Buy"
         formatted_qty = f"{qty:.3f}"
 
-        tp_order = {
-            "category": "linear",
-            "symbol": symbol,
-            "side": opposite_side,
-            "order_type": "Limit",
-            "qty": formatted_qty,
-            "price": tp_price,
-            "time_in_force": "GoodTillCancel",
-            "reduce_only": True,
-            "close_on_trigger": False,
-            "order_link_id": f"{order_link_id}_TP" if order_link_id else None
-        }
+        if self.use_real:
+            # ✅ REAL MODE: Send to Bybit API
+            tp_order = {
+                "category": "linear",
+                "symbol": symbol,
+                "side": opposite_side,
+                "order_type": "Limit",
+                "qty": formatted_qty,
+                "price": tp_price,
+                "time_in_force": "GoodTillCancel",
+                "reduce_only": True,
+                "close_on_trigger": False,
+                "order_link_id": f"{order_link_id}_TP" if order_link_id else None
+            }
 
-        sl_order = {
-            "category": "linear",
-            "symbol": symbol,
-            "side": opposite_side,
-            "order_type": "Limit",
-            "qty": formatted_qty,
-            "price": sl_price,
-            "time_in_force": "GoodTillCancel",
-            "reduce_only": True,
-            "close_on_trigger": True,
-            "order_link_id": f"{order_link_id}_SL" if order_link_id else None
-        }
+            sl_order = {
+                "category": "linear",
+                "symbol": symbol,
+                "side": opposite_side,
+                "order_type": "Limit",
+                "qty": formatted_qty,
+                "price": sl_price,
+                "time_in_force": "GoodTillCancel",
+                "reduce_only": True,
+                "close_on_trigger": True,
+                "order_link_id": f"{order_link_id}_SL" if order_link_id else None
+            }
 
-        self._send_request("place_order", tp_order)
-        self._send_request("place_order", sl_order)
+            self._send_request("place_order", tp_order)
+            self._send_request("place_order", sl_order)
+            logger.info(f"[Real] ✅ TP @ {tp_price}, SL @ {sl_price} placed for {symbol}")
 
-        logger.info(f"[Real] ✅ TP @ {tp_price}, SL @ {sl_price}")
+        else:
+            # ✅ VIRTUAL MODE: Add to virtual order book
+            if not order_id:
+                order_id = f"virtual_{int(time.time() * 1000)}"
+
+            tp_order = {
+                "order_id": f"{order_id}_VTP",
+                "symbol": symbol,
+                "side": opposite_side,
+                "order_type": "Limit",
+                "qty": qty,
+                "price": tp_price,
+                "status": "open",
+                "reduce_only": True,
+                "close_on_trigger": False,
+                "create_time": datetime.utcnow()
+            }
+
+            sl_order = {
+                "order_id": f"{order_id}_VSL",
+                "symbol": symbol,
+                "side": opposite_side,
+                "order_type": "Limit",
+                "qty": qty,
+                "price": sl_price,
+                "status": "open",
+                "reduce_only": True,
+                "close_on_trigger": True,
+                "create_time": datetime.utcnow()
+            }
+
+            self._virtual_orders.extend([tp_order, sl_order])
+            logger.info(f"[Virtual] ✅ TP @ {tp_price}, SL @ {sl_price} placed for {symbol}")
 
                 
     def get_open_positions(self) -> List[Dict[str, Any]]:
