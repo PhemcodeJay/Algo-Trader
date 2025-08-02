@@ -120,7 +120,7 @@ class BybitClient:
             } for item in raw["result"]["list"]
         ]
 
-    def get_balance(self, coin: str = "USDT") -> dict:
+    def wallet_balance(self, coin: str = "USDT") -> dict:
         if self.use_real:
             # Real trading: call Bybit API
             response = self._send_request("wallet_balance", {"coin": coin})
@@ -143,8 +143,8 @@ class BybitClient:
     
     def get_wallet_balance(self) -> dict:
         if self.use_real:
-            # Use get_balance for real
-            return self.get_balance("USDT")
+            # Use wallet_balance for real
+            return self.wallet_balance("USDT")
         else:
             # Virtual mode: get detailed virtual wallet info
             try:
@@ -211,9 +211,6 @@ class BybitClient:
         order_link_id: Optional[str] = None
     ) -> Dict[str, Any]:
 
-        # ============================
-        # ✅ Real Trading Mode
-        # ============================
         if self.use_real and self.client:
             if order_link_id:
                 try:
@@ -223,7 +220,6 @@ class BybitClient:
                         (o for o in open_orders_data.get("list", []) if o.get("order_link_id") == order_link_id),
                         None
                     )
-
                     if matched_order:
                         amend_params = {
                             "symbol": symbol,
@@ -232,17 +228,15 @@ class BybitClient:
                         }
                         if price is not None:
                             amend_params["price"] = price
-
                         response = self._send_request("amend_active_order", amend_params)
                         return extract_response(response)
-
                 except Exception as e:
                     logger.warning(f"[Real] ⚠️ Failed to amend order with link_id={order_link_id}: {e}")
 
-            # ✅ Round qty according to Bybit step size
             qty_step = self.get_qty_step(symbol)
             qty = round(float(qty) / qty_step) * qty_step
-            formatted_qty = f"{qty:.{str(qty_step)[::-1].find('.')}f}"
+            precision = str(qty_step)[::-1].find('.')
+            formatted_qty = f"{qty:.{precision}f}"
 
             params: Dict[str, Any] = {
                 "category": "linear",
@@ -260,13 +254,27 @@ class BybitClient:
                 params["order_link_id"] = order_link_id
 
             response = self._send_request("place_order", params)
-            data, *_ = extract_response(response)  # Unpack the tuple
-            result = data.get("result", {})
-            order_id = result.get("orderId") or result.get("order_id")
 
+            try:
+                data = extract_response(response)
+            except Exception as e:
+                logger.error(f"[Real] ❌ Failed to extract response: {e}")
+                return {
+                    "success": False,
+                    "message": "Invalid response format",
+                    "error": str(e),
+                    "response": response
+                }
+
+            result = data.get("result", data)
+            order_id = result.get("orderId") or result.get("order_id")
             if not order_id:
                 logger.warning(f"[Real] ⚠️ No order_id returned: {response}")
-                return {"success": False, "message": "No order ID returned", "response": response}
+                return {
+                    "success": False,
+                    "message": "No order ID returned",
+                    "response": response
+                }
 
             try:
                 time.sleep(0.5)
@@ -285,12 +293,26 @@ class BybitClient:
                 order_status = order_info.get("order_status", "UNKNOWN")
 
                 if order_status in ["New", "PartiallyFilled", "Filled"]:
+                    logger.info(f"[Real] ✅ Order confirmed. Placing TP/SL limit orders...")
+
+                    try:
+                        entry_price = float(result.get("price") or price)
+                        self.place_tp_sl_limit_orders(
+                            symbol=symbol,
+                            side=side,
+                            entry_price=entry_price,
+                            qty=qty,
+                            order_link_id=order_link_id
+                        )
+                    except Exception as e:
+                        logger.error(f"[TP/SL] ❌ Failed to place TP/SL: {e}")
+
                     return {
                         "success": True,
                         "message": "Order placed successfully",
                         "order_id": order_id,
                         "status": order_status,
-                        "response": data
+                        "response": result
                     }
                 else:
                     logger.warning(f"[Real] ❌ Order not active: {order_info}")
@@ -300,6 +322,7 @@ class BybitClient:
                         "order_id": order_id,
                         "response": order_info
                     }
+
             except Exception as e:
                 logger.error(f"[Real] 🚨 Failed to validate order status: {e}")
                 return {
@@ -309,8 +332,7 @@ class BybitClient:
                     "response": response
                 }
 
-
-        # ============================
+       # ============================
         # ✅ Virtual Trading Mode
         # ============================
         price_used = price or 1.0
@@ -319,7 +341,7 @@ class BybitClient:
         wallet = self.virtual_wallet.get("virtual", {})
         available_capital = wallet.get("available", 0)
 
-        # Check for existing virtual order
+        # Check for existing virtual order (amend logic)
         existing_order = next(
             (o for o in self._virtual_orders if o["symbol"] == symbol and o["side"] == side and o["status"] == "open"),
             None
@@ -357,11 +379,12 @@ class BybitClient:
 
             return {"message": "Virtual order modified", "order": existing_order}
 
-        # No existing virtual order — create new one
+        # No existing order — open new position
         if margin > available_capital:
             logger.warning(f"[Virtual] ❌ Not enough capital. Needed: {margin}, Available: {available_capital}")
             return {"error": "Insufficient virtual capital"}
 
+        # Close old and adjust wallet
         closed_pos = self.close_virtual_position(symbol)
         pnl = closed_pos.get("realized_pnl", 0) if closed_pos else 0
         wallet["available"] = wallet.get("available", 0) - margin + pnl
@@ -370,6 +393,7 @@ class BybitClient:
         self._save_virtual_wallet()
 
         order_id = f"virtual_{int(time.time() * 1000)}"
+        create_time = datetime.utcnow()
         virtual_order = {
             "order_id": order_id,
             "symbol": symbol,
@@ -380,7 +404,7 @@ class BybitClient:
             "status": "open",
             "margin": margin,
             "leverage": leverage,
-            "create_time": datetime.utcnow()
+            "create_time": create_time
         }
         self._virtual_orders.append(virtual_order)
 
@@ -391,31 +415,119 @@ class BybitClient:
             "price": price or 0.0,
             "margin": margin,
             "status": "open",
-            "create_time": datetime.utcnow(),
+            "create_time": create_time,
             "order_id": order_id
         })
 
-        # After successful order placement (real or virtual)
+        # ✅ Place TP/SL virtual limit orders
+        entry_price = price or 1.0
+        tp_multiplier = 1.02
+        sl_multiplier = 0.98
+
+        tp_price = round(entry_price * tp_multiplier, 4)
+        sl_price = round(entry_price * sl_multiplier, 4)
+        opposite_side = "Sell" if side == "Buy" else "Buy"
+
+        tp_order = {
+            "order_id": f"{order_id}_TP",
+            "symbol": symbol,
+            "side": opposite_side,
+            "order_type": "Limit",
+            "qty": qty,
+            "price": tp_price,
+            "status": "open",
+            "reduce_only": True,
+            "create_time": create_time
+        }
+        sl_order = {
+            "order_id": f"{order_id}_SL",
+            "symbol": symbol,
+            "side": opposite_side,
+            "order_type": "Limit",
+            "qty": qty,
+            "price": sl_price,
+            "status": "open",
+            "reduce_only": True,
+            "create_time": create_time
+        }
+
+        self._virtual_orders.extend([tp_order, sl_order])
+
+        logger.info(f"[Virtual] ✅ TP @ {tp_price}, SL @ {sl_price} placed.")
+
+        # Save trade in DB
         trade_data = {
             "symbol": symbol,
             "side": side,
             "qty": qty,
-            "entry_price": price or 0.0,
-            "leverage": 20,
+            "entry_price": entry_price,
+            "leverage": leverage,
             "margin_usdt": margin,
             "order_id": order_id,
             "status": "open",
-            "timestamp": datetime.utcnow(),
-            "virtual": not self.use_real
+            "timestamp": create_time,
+            "virtual": True
         }
         db_manager.add_trade(trade_data)
 
         return virtual_order
 
 
+    def place_tp_sl_limit_orders(self, symbol: str, side: str, entry_price: float, qty: float, order_link_id: Optional[str] = None):
+        tp_multiplier = 1.02
+        sl_multiplier = 0.98
+
+        tp_price = round(entry_price * tp_multiplier, 4)
+        sl_price = round(entry_price * sl_multiplier, 4)
+
+        opposite_side = "Sell" if side == "Buy" else "Buy"
+        formatted_qty = f"{qty:.3f}"
+
+        tp_order = {
+            "category": "linear",
+            "symbol": symbol,
+            "side": opposite_side,
+            "order_type": "Limit",
+            "qty": formatted_qty,
+            "price": tp_price,
+            "time_in_force": "GoodTillCancel",
+            "reduce_only": True,
+            "close_on_trigger": False,
+            "order_link_id": f"{order_link_id}_TP" if order_link_id else None
+        }
+
+        sl_order = {
+            "category": "linear",
+            "symbol": symbol,
+            "side": opposite_side,
+            "order_type": "Limit",
+            "qty": formatted_qty,
+            "price": sl_price,
+            "time_in_force": "GoodTillCancel",
+            "reduce_only": True,
+            "close_on_trigger": True,
+            "order_link_id": f"{order_link_id}_SL" if order_link_id else None
+        }
+
+        self._send_request("place_order", tp_order)
+        self._send_request("place_order", sl_order)
+
+        logger.info(f"[Real] ✅ TP @ {tp_price}, SL @ {sl_price}")
+
                 
     def get_open_positions(self) -> List[Dict[str, Any]]:
         return [pos for pos in self._virtual_positions if pos["status"] == "open"]
+    
+    def get_order(self, order_id: str, symbol: str, category: str = "linear") -> dict:
+        return self._send_request(
+            "get_order",  # ✅ Match the key in your _endpoint_map
+            {
+                "orderId": order_id,   # ✅ Use camelCase to match Bybit V5 API
+                "symbol": symbol,
+                "category": category
+            }
+        )
+
 
     def get_closed_positions(self) -> List[Dict[str, Any]]:
         return [pos for pos in self._virtual_positions if pos["status"] == "closed"]
@@ -505,6 +617,24 @@ class BybitClient:
         except Exception as e:
             print(f"[BybitClient] ❌ Failed to fetch symbols: {e}")
             return []
+        
+    def get_price_step(self, symbol: str) -> float:
+        if not self.client:
+            return 0.01  # fallback default
+
+        try:
+            result = self.client.get_instruments_info(category="linear", symbol=symbol)
+            if isinstance(result, tuple):
+                result = result[0]  # Extract the dict if it's a tuple
+
+            instruments = result.get("result", {}).get("list", [])
+            if instruments:
+                tick_size = instruments[0].get("priceFilter", {}).get("tickSize")
+                return float(tick_size)
+        except Exception as e:
+            logger.error(f"Failed to fetch price step for {symbol}: {e}")
+        return 0.01  # fallback default
+
 
 
 # Export instance
