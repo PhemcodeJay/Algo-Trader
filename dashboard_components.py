@@ -35,6 +35,11 @@ class DashboardComponents:
         except (TypeError, ValueError):
             margin_display = "N/A"
 
+       # Safely convert or fallback to 0.0
+        entry = float(entry) if entry is not None else 0.0
+        tp = float(tp) if tp is not None else 0.0
+        sl = float(sl) if sl is not None else 0.0
+
         with col1:
             st.markdown(f"**{symbol}** - {side}")
             st.markdown(f"Strategy: {strategy}")

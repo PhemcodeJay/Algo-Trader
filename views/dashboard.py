@@ -60,7 +60,7 @@ def render(trading_engine, dashboard, db_manager):
             st.info("No recent signals available.")
 
     with col_right:
-        st.subheader("📊 Real Wallet Performance")
+        st.subheader("📊 Real Wallet Overview")
         if real_trades:
             fig = dashboard.create_portfolio_performance_chart(real_trades, real_total)
             st.plotly_chart(fig, use_container_width=True)
