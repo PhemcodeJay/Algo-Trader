@@ -36,7 +36,7 @@ class BybitClient:
 
         self._virtual_orders: List[Dict[str, Any]] = []
         self._virtual_positions: List[Dict[str, Any]] = []
-
+        self.client.get_orders(...)
         self.session = requests.Session()
         self.base_url = "https://api.bybit.com"  # default for mainnet
 
@@ -88,19 +88,23 @@ class BybitClient:
             logger.error("[BybitClient] ❌ Client not initialized.")
             return {}, timedelta(), CaseInsensitiveDict()
 
-        # NEW: Special-case nested methods
-        if method == "get_orders":
-            method_func = getattr(self.client.order, "get_orders", None)
-        elif method == "get_order":
-            method_func = getattr(self.client.order, "get_order", None)
-        else:
-            method_func = getattr(self.client, method, None)
-
-        if not callable(method_func):
-            logger.error(f"[BybitClient] ❌ Method '{method}' not found on client.")
-            return {}, timedelta(), CaseInsensitiveDict()
+        # Handle known method routing properly
+        method_func = None
 
         try:
+            if method in {"get_orders", "get_positions", "get_wallet_balance"}:
+                method_func = getattr(self.client, method, None)
+            elif method == "get_order":  # Only if you know client.order exists
+                # Caution: `self.client.order` is invalid for pybit.HTTP
+                logger.error("[BybitClient] ❌ 'order' attribute does not exist on client.")
+                return {}, timedelta(), CaseInsensitiveDict()
+            else:
+                method_func = getattr(self.client, method, None)
+
+            if not callable(method_func):
+                logger.error(f"[BybitClient] ❌ Method '{method}' not found or not callable on client.")
+                return {}, timedelta(), CaseInsensitiveDict()
+
             start_time = datetime.now()
             raw_result = method_func(**(params or {}))
             elapsed = datetime.now() - start_time
@@ -110,7 +114,10 @@ class BybitClient:
                 return {}, elapsed, CaseInsensitiveDict()
 
             if raw_result.get("retCode") != 0:
-                logger.warning(f"[BybitClient] ⚠️ API Error: {raw_result.get('retMsg')} (ErrCode: {raw_result.get('retCode')})")
+                logger.warning(
+                    f"[BybitClient] ⚠️ API Error: {raw_result.get('retMsg')} "
+                    f"(ErrCode: {raw_result.get('retCode')})"
+                )
                 return {}, elapsed, CaseInsensitiveDict()
 
             result = raw_result.get("result") or {}
@@ -119,6 +126,7 @@ class BybitClient:
         except Exception as e:
             logger.exception(f"[BybitClient] ❌ Exception during '{method}' call: {e}")
             return {}, timedelta(), CaseInsensitiveDict()
+
 
 
     def get_kline(self, symbol: str, interval: str, limit: int = 200) -> Dict[str, Any]:
