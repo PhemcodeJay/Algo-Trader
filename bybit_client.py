@@ -36,9 +36,10 @@ class BybitClient:
 
         self._virtual_orders: List[Dict[str, Any]] = []
         self._virtual_positions: List[Dict[str, Any]] = []
+        self.virtual_wallet: Dict[str, Any] = {}  # ensure virtual_wallet is always defined
         self.session = requests.Session()
-        self.base_url = "https://api.bybit.com"  # default to mainnet unless testnet is used
-        self.client = None  # ✅ Initialize to None at the top for safety
+        self.client = None  # initialize to None
+        self.base_url = "https://api.bybit.com"
 
         try:
             from pybit.unified_trading import HTTP
@@ -59,36 +60,39 @@ class BybitClient:
                 self.client = self._HTTP(
                     api_key=self.api_key,
                     api_secret=self.api_secret,
-                    endpoint="https://api.bybit.com"
+                    testnet=False  # ✅ no 'endpoint' parameter needed
                 )
                 logger.info("[BybitClient] ✅ Live trading enabled (mainnet)")
             except Exception as e:
                 logger.exception("❌ Failed to initialize Bybit client: %s", e)
+                self.client = None
 
         elif self.use_testnet:
-            self.api_key = ""
-            self.api_secret = ""
-            self.client = None
-            self.base_url = "https://api-testnet.bybit.com"
-            self._load_virtual_wallet()
-            logger.info("[BybitClient] 🧪 Virtual trading mode enabled")
+            self.api_key = os.getenv("BYBIT_TESTNET_API_KEY", "")
+            self.api_secret = os.getenv("BYBIT_TESTNET_API_SECRET", "")
+            try:
+                self.client = self._HTTP(
+                    api_key=self.api_key,
+                    api_secret=self.api_secret,
+                    testnet=True
+                )
+                logger.info("[BybitClient] 🧪 Testnet trading enabled")
+            except Exception as e:
+                logger.exception("❌ Failed to initialize Bybit testnet client: %s", e)
+                self.client = None
 
         else:
             logger.warning("⚠️ No trading mode specified. Defaulting to virtual mode.")
             self._load_virtual_wallet()
 
-        # ✅ Only call client methods AFTER initialization
+        # ✅ Optional sanity check
         if self.client:
             try:
-                # Optional test call to ensure connectivity
                 test_result = self.client.get_server_time()
                 logger.debug(f"[BybitClient] Server time: {test_result}")
             except Exception as e:
                 logger.warning(f"[BybitClient] ⚠️ Test connection failed: {e}")
 
-            else:
-                logger.error("❌ Neither USE_REAL_TRADING nor BYBIT_TESTNET is set.")
-                self.client = None
 
     def _load_virtual_wallet(self):
         try:
