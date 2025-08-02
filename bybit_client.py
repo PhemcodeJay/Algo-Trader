@@ -83,23 +83,40 @@ class BybitClient:
             logger.error("❌ Error loading capital.json: %s", e)
             self.virtual_wallet = {}
 
-    def _send_request(self, method: str, params: Optional[Dict[str, Any]] = None) -> Tuple[Dict[str, Any], timedelta, CaseInsensitiveDict]:
+    def _send_request(
+        self,
+        method: str,
+        params: Optional[Dict[str, Any]] = None
+    ) -> Tuple[Dict[str, Any], timedelta, CaseInsensitiveDict]:
         if self.client is None:
+            logger.error("[BybitClient] ❌ Client not initialized.")
             return {}, timedelta(), CaseInsensitiveDict()
 
         method_func = getattr(self.client, method, None)
         if not callable(method_func):
-            logger.error(f"Method '{method}' not found.")
+            logger.error(f"[BybitClient] ❌ Method '{method}' not found on client.")
             return {}, timedelta(), CaseInsensitiveDict()
 
         try:
             start_time = datetime.now()
             raw_result = method_func(**(params or {}))
             elapsed = datetime.now() - start_time
-            return cast(Dict[str, Any], raw_result), elapsed, CaseInsensitiveDict()
+
+            if not isinstance(raw_result, dict):
+                logger.warning(f"[BybitClient] ⚠️ Invalid response format: {raw_result}")
+                return {}, elapsed, CaseInsensitiveDict()
+
+            if raw_result.get("retCode") != 0:
+                logger.warning(f"[BybitClient] ⚠️ API Error: {raw_result.get('retMsg')} (ErrCode: {raw_result.get('retCode')})")
+                return {}, elapsed, CaseInsensitiveDict()
+
+            result = raw_result.get("result") or {}
+            return result, elapsed, CaseInsensitiveDict(raw_result.get("retExtInfo", {}))
+
         except Exception as e:
-            logger.exception(f"Error calling Bybit API method '{method}': {e}")
+            logger.exception(f"[BybitClient] ❌ Exception during '{method}' call: {e}")
             return {}, timedelta(), CaseInsensitiveDict()
+
 
     def get_kline(self, symbol: str, interval: str, limit: int = 200) -> Dict[str, Any]:
         response = self._send_request("kline", {"symbol": symbol, "interval": interval, "limit": limit})
@@ -122,23 +139,38 @@ class BybitClient:
 
     def wallet_balance(self, coin: str = "USDT") -> dict:
         if self.use_real:
-            # Real trading: call Bybit API
-            response = self._send_request("wallet_balance", {"coin": coin})
-            data = extract_response(response)
-            balance = data.get(coin, {}).get("available", 0.0)
-            return {"capital": float(balance), "currency": coin}
+            # === Real trading: Call Bybit API ===
+            response, _, _ = self._send_request("get_wallet_balance", {"coin": coin})
+            if not response:
+                logger.warning("[BybitClient] ⚠️ No wallet balance response received.")
+                return {"capital": 0.0, "currency": coin}
+
+            balance_info = response.get(coin, {})
+            available = balance_info.get("availableBalance") or balance_info.get("available", 0.0)
+            return {
+                "capital": float(available),
+                "currency": coin
+            }
+
         else:
-            # Virtual mode: load from capital.json
+            # === Virtual mode: Load from capital.json ===
             try:
                 with open("capital.json", "r") as f:
                     capital_data = json.load(f)
+
                 virtual = capital_data.get("virtual", {})
+                capital = float(virtual.get("available", 0.0) + virtual.get("used", 0.0))
+                currency = virtual.get("currency", coin)
+
                 return {
-                    "capital": float(virtual.get("available", 0.0) + virtual.get("used", 0.0)),
-                    "currency": virtual.get("currency", coin)
+                    "capital": capital,
+                    "currency": currency
                 }
+
             except Exception as e:
+                logger.exception("[BybitClient] ❌ Failed to load virtual capital.")
                 return {"capital": 0.0, "currency": coin}
+
 
     
     def get_wallet_balance(self) -> dict:
