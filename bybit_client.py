@@ -368,18 +368,20 @@ class BybitClient:
             try:
                 time.sleep(0.5)
                 status_resp = self._send_request("get_orders", {"category": "linear", "orderId": order_id})
-                order_info = extract_response(status_resp)
-
-                if not isinstance(order_info, dict):
-                    logger.warning(f"[Real] ❌ Unexpected order_info type: {type(order_info)} - {order_info}")
+                status_data, _, _ = status_resp
+                orders_list = status_data.get("list", [])
+                if not orders_list:
+                    logger.warning("[Real] ❌ No orders found in order status response.")
                     return {
                         "success": False,
-                        "message": "Invalid order info returned",
+                        "message": "No orders returned",
                         "order_id": order_id,
-                        "response": order_info
+                        "response": status_data
                     }
 
-                order_status = order_info.get("order_status", "UNKNOWN")
+                order_info = orders_list[0]
+                order_status = order_info.get("orderStatus", "UNKNOWN")  # Note: PascalCase from Bybit API
+
 
                 if order_status in ["New", "PartiallyFilled", "Filled"]:
                     logger.info(f"[Real] ✅ Order confirmed. Placing TP/SL limit orders...")
@@ -570,18 +572,17 @@ class BybitClient:
         qty: float,
         order_link_id: Optional[str] = None,
         order_id: Optional[str] = None
-        ):
+    ):
         tp_multiplier = 1.30  # +30%
         sl_multiplier = 0.85  # -15%
 
         tp_price = round(entry_price * tp_multiplier, 4)
         sl_price = round(entry_price * sl_multiplier, 4)
-
         opposite_side = "Sell" if side == "Buy" else "Buy"
         formatted_qty = f"{qty:.3f}"
 
         if self.use_real:
-            # ✅ REAL MODE: Send to Bybit API
+            # ✅ REAL MODE
             tp_order = {
                 "category": "linear",
                 "symbol": symbol,
@@ -591,8 +592,7 @@ class BybitClient:
                 "price": tp_price,
                 "time_in_force": "GoodTillCancel",
                 "reduce_only": True,
-                "close_on_trigger": False,
-                "order_link_id": f"{order_link_id}_TP" if order_link_id else None
+                "close_on_trigger": False
             }
 
             sl_order = {
@@ -604,16 +604,27 @@ class BybitClient:
                 "price": sl_price,
                 "time_in_force": "GoodTillCancel",
                 "reduce_only": True,
-                "close_on_trigger": True,
-                "order_link_id": f"{order_link_id}_SL" if order_link_id else None
+                "close_on_trigger": True
             }
 
-            self._send_request("place_order", tp_order)
-            self._send_request("place_order", sl_order)
-            logger.info(f"[Real] ✅ TP @ {tp_price}, SL @ {sl_price} placed for {symbol}")
+            if order_link_id:
+                tp_order["order_link_id"] = f"{order_link_id}_TP"
+                sl_order["order_link_id"] = f"{order_link_id}_SL"
+
+            try:
+                self._send_request("place_order", tp_order)
+                logger.info(f"[Real] ✅ TP order placed at {tp_price} for {symbol}")
+            except Exception as e:
+                logger.error(f"[Real] ❌ Failed to place TP order: {e}")
+
+            try:
+                self._send_request("place_order", sl_order)
+                logger.info(f"[Real] ✅ SL order placed at {sl_price} for {symbol}")
+            except Exception as e:
+                logger.error(f"[Real] ❌ Failed to place SL order: {e}")
 
         else:
-            # ✅ VIRTUAL MODE: Add to virtual order book
+            # ✅ VIRTUAL MODE
             if not order_id:
                 order_id = f"virtual_{int(time.time() * 1000)}"
 
@@ -627,7 +638,7 @@ class BybitClient:
                 "status": "open",
                 "reduce_only": True,
                 "close_on_trigger": False,
-                "create_time": datetime.utcnow()
+                "create_time": datetime.utcnow().isoformat()
             }
 
             sl_order = {
@@ -640,11 +651,11 @@ class BybitClient:
                 "status": "open",
                 "reduce_only": True,
                 "close_on_trigger": True,
-                "create_time": datetime.utcnow()
+                "create_time": datetime.utcnow().isoformat()
             }
 
             self._virtual_orders.extend([tp_order, sl_order])
-            logger.info(f"[Virtual] ✅ TP @ {tp_price}, SL @ {sl_price} placed for {symbol}")
+            logger.info(f"[Virtual] ✅ TP @ {tp_price}, SL @ {sl_price} added for {symbol}")
 
                 
     def get_open_positions(self) -> List[Dict[str, Any]]:
