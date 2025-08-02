@@ -164,7 +164,8 @@ def analyze(symbol):
     opts = [tf['sma20'], tf['ema9'], tf['ema21']]
     entry = min(opts, key=lambda x: abs(x - price))
 
-    side = 'LONG' if sides[0] == 'LONG' else 'SHORT'
+    side = 'Buy' if sides[0] == 'LONG' else 'Sell'
+
     tp = round(entry * (1.015 if side == 'LONG' else 0.985), 6)
     sl = round(entry * (0.985 if side == 'LONG' else 1.015), 6)
     trail = round(entry * (1 - ENTRY_BUFFER_PCT) if side == 'LONG' else entry * (1 + ENTRY_BUFFER_PCT), 6)
