@@ -225,6 +225,7 @@ class BybitClient:
 
             # === Place new order ===
             params: Dict[str, Any] = {
+                "category": "linear",
                 "symbol": symbol,
                 "side": side,
                 "order_type": order_type,
@@ -238,7 +239,7 @@ class BybitClient:
             if order_link_id:
                 params["order_link_id"] = order_link_id
 
-            response = self._send_request("place_active_order", params)
+            response = self._send_request("place_order", params)
             return extract_response(response)
 
         # ============================
