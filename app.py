@@ -67,16 +67,16 @@ def render_wallet_summary(trading_engine):
         real = capital_data.get("real", {})
         virtual = capital_data.get("virtual", {})
 
-        # --- Real Wallet ---
-        st.sidebar.subheader("💰 Real Wallet")
-        st.sidebar.metric("Total", f"${float(real.get('capital', 0.0)):,.2f}")
-        st.sidebar.metric("Available", f"${float(real.get('available', 0.0)):,.2f}")
-
         # --- Virtual Wallet ---
         st.sidebar.subheader("🧪 Virtual Wallet")
-        st.sidebar.metric("Total", f"${float(virtual.get('capital', 0.0)):,.2f}")
         st.sidebar.metric("Available", f"${float(virtual.get('available', 0.0)):,.2f}")
+        st.sidebar.metric("Total", f"${float(virtual.get('capital', 0.0)):,.2f}")
 
+        # --- Real Wallet ---
+        st.sidebar.subheader("💰 Real Wallet")
+        st.sidebar.metric("Available", f"${float(real.get('available', 0.0)):,.2f}")
+        st.sidebar.metric("Total", f"${float(real.get('capital', 0.0)):,.2f}")
+       
     except Exception as e:
         st.sidebar.error(f"❌ Wallet Load Error: {e}")
 

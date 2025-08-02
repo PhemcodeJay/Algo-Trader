@@ -43,12 +43,16 @@ def render(trading_engine, dashboard):
                 balances = trading_engine.load_capital("all") or {}
                 real = balances.get("real", {})
                 virtual = balances.get("virtual", {})
+
                 capital = float(real.get("capital", 0.0)) + float(virtual.get("capital", 0.0))
+                available = float(real.get("available", real.get("capital", 0.0))) + float(virtual.get("available", virtual.get("capital", 0.0)))
                 start_balance = float(real.get("start_balance", 0.0)) + float(virtual.get("start_balance", 0.0))
                 currency = real.get("currency") or virtual.get("currency", "USD")
             else:
                 balance = trading_engine.load_capital(mode.lower()) or {}
+
                 capital = float(balance.get("capital", 0.0))
+                available = float(balance.get("available", balance.get("capital", 0.0)))
                 start_balance = float(balance.get("start_balance", 0.0))
                 currency = balance.get("currency", "USD")
 
@@ -67,12 +71,14 @@ def render(trading_engine, dashboard):
             realized_pnl = sum(float(get_attr(t, "pnl", 0.0)) for t in trades) if i == 2 else 0.0
 
             # === Dashboard Metrics ===
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Balance", f"${capital:,.2f}", currency)
-            col2.metric("Total Return", f"{total_return_pct:+.2f}%")
-            col3.metric("Daily P&L", f"${daily_pnl:+.2f}")
-            col4.metric("Win Rate", f"{win_rate:.2f}%")
+            col1, col2, col3, col4, col5 = st.columns(5)
+            col1.metric("Capital", f"${capital:,.2f}", currency)
+            col2.metric("Available", f"${available:,.2f}")
+            col3.metric("Total Return", f"{total_return_pct:+.2f}%")
+            col4.metric("Daily P&L", f"${daily_pnl:+.2f}")
+            col5.metric("Win Rate", f"{win_rate:.2f}%")
 
+            # === Extra P&L Display ===
             if i == 1:
                 st.markdown("### 📊 Unrealized P&L")
                 st.metric("Unrealized PnL (Open Trades)", f"${unrealized_pnl:+.2f}")
@@ -82,6 +88,7 @@ def render(trading_engine, dashboard):
                 st.metric("Realized PnL (Closed Trades)", f"${realized_pnl:+.2f}")
 
             st.markdown("---")
+
 
             # === Charts and Stats ===
             left, right = st.columns([2, 1])
