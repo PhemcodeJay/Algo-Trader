@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+from symtable import Symbol
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, Tuple, Union, List, cast
@@ -426,7 +427,7 @@ def update_usdt_capital(self) -> None:
             try:
                 time.sleep(0.5)
                 status_resp = self._send_request("get_orders", {"category": "linear", "orderId": order_id})
-                status_data, _, _ = status_resp
+                status_data = extract_response(status_resp)
                 orders_list = status_data.get("list", [])
                 if not orders_list:
                     logger.warning("[Real] ❌ No orders found in order status response.")
@@ -445,7 +446,14 @@ def update_usdt_capital(self) -> None:
                     try:
                         raw_price = result.get("price")
                         entry_price = float(raw_price) if raw_price is not None else float(price or 0.0)
-                        self.place_tp_sl(symbol, qty, side, entry_price)
+                        self.place_tp_sl_limit_orders(
+                            symbol=symbol,
+                            side=side,
+                            entry_price=entry_price,
+                            qty=qty,
+                            order_link_id=order_link_id,
+                            order_id=order_id
+                        )
                     except Exception as e:
                         logger.error(f"[TP/SL] ❌ Failed to place TP/SL: {e}")
 
@@ -474,9 +482,8 @@ def update_usdt_capital(self) -> None:
                     "response": response
                 }
 
-
-       # ============================
-        # ✅ Virtual Trading Mode
+        # ============================
+        # ✅ VIRTUAL TRADING MODE
         # ============================
         price_used = price or 1.0
         leverage = 20
@@ -484,7 +491,6 @@ def update_usdt_capital(self) -> None:
         wallet = self.virtual_wallet.get("virtual", {})
         available_capital = wallet.get("available", 0)
 
-        # Check for existing virtual order (amend logic)
         existing_order = next(
             (o for o in self._virtual_orders if o["symbol"] == symbol and o["side"] == side and o["status"] == "open"),
             None
@@ -522,12 +528,10 @@ def update_usdt_capital(self) -> None:
 
             return {"message": "Virtual order modified", "order": existing_order}
 
-        # No existing order — open new position
         if margin > available_capital:
             logger.warning(f"[Virtual] ❌ Not enough capital. Needed: {margin}, Available: {available_capital}")
             return {"error": "Insufficient virtual capital"}
 
-        # Close old and adjust wallet
         closed_pos = self.close_virtual_position(symbol)
         pnl = closed_pos.get("realized_pnl", 0) if closed_pos else 0
         wallet["available"] = wallet.get("available", 0) - margin + pnl
@@ -562,48 +566,19 @@ def update_usdt_capital(self) -> None:
             "order_id": order_id
         })
 
-        # ✅ Place TP/SL virtual limit orders
-        entry_price = price or 1.0
-        tp_multiplier = 1.02
-        sl_multiplier = 0.98
+        self.place_tp_sl_limit_orders(
+            symbol=symbol,
+            side=side,
+            entry_price=price_used,
+            qty=qty,
+            order_id=order_id
+        )
 
-        tp_price = round(entry_price * tp_multiplier, 4)
-        sl_price = round(entry_price * sl_multiplier, 4)
-        opposite_side = "Sell" if side == "Buy" else "Buy"
-
-        tp_order = {
-            "order_id": f"{order_id}_TP",
-            "symbol": symbol,
-            "side": opposite_side,
-            "order_type": "Limit",
-            "qty": qty,
-            "price": tp_price,
-            "status": "open",
-            "reduce_only": True,
-            "create_time": create_time
-        }
-        sl_order = {
-            "order_id": f"{order_id}_SL",
-            "symbol": symbol,
-            "side": opposite_side,
-            "order_type": "Limit",
-            "qty": qty,
-            "price": sl_price,
-            "status": "open",
-            "reduce_only": True,
-            "create_time": create_time
-        }
-
-        self._virtual_orders.extend([tp_order, sl_order])
-
-        logger.info(f"[Virtual] ✅ TP @ {tp_price}, SL @ {sl_price} placed.")
-
-        # Save trade in DB
         trade_data = {
             "symbol": symbol,
             "side": side,
             "qty": qty,
-            "entry_price": entry_price,
+            "entry_price": price_used,
             "leverage": leverage,
             "margin_usdt": margin,
             "order_id": order_id,
@@ -613,8 +588,12 @@ def update_usdt_capital(self) -> None:
         }
         db_manager.add_trade(trade_data)
 
-        return virtual_order
-
+        return {
+            "success": True,
+            "message": "Virtual order placed successfully",
+            "order_id": order_id,
+            "order": virtual_order
+        }
 
     def place_tp_sl_limit_orders(
         self,
@@ -634,7 +613,6 @@ def update_usdt_capital(self) -> None:
         formatted_qty = f"{qty:.3f}"
 
         if self.use_real:
-            # ✅ REAL MODE
             tp_order = {
                 "category": "linear",
                 "symbol": symbol,
@@ -676,7 +654,6 @@ def update_usdt_capital(self) -> None:
                 logger.error(f"[Real] ❌ Failed to place SL order: {e}")
 
         else:
-            # ✅ VIRTUAL MODE
             if not order_id:
                 order_id = f"virtual_{int(time.time() * 1000)}"
 
@@ -707,7 +684,7 @@ def update_usdt_capital(self) -> None:
             }
 
             self._virtual_orders.extend([tp_order, sl_order])
-            logger.info(f"[Virtual] ✅ TP @ {tp_price}, SL @ {sl_price} added for {symbol}")
+            logger.info(f"[Virtual] ✅ TP @ {tp_price}, SL @ {sl_price} added for {Symbol}")
 
                 
     def get_open_positions(self) -> List[Dict[str, Any]]:
@@ -801,17 +778,19 @@ def update_usdt_capital(self) -> None:
                 pos["fill_time"] = datetime.utcnow()
                 logger.info(f"[Virtual] Position for {pos['symbol']} marked as active.")
 
-    def get_symbols(self):
+    def get_symbols(self, category="linear"):
         try:
-            url = self.base_url + "/v5/market/instruments-info"
-            params = {"category": "linear"}
-            response = self.session.get(url, params=params)
-            response.raise_for_status()
-            data = response.json()
-            return data.get("result", {}).get("list", [])
+            response = self.session.get_instruments_info(category=category)
+
+            if response.get("retCode") != 0:
+                raise Exception(response.get("retMsg", "Failed to fetch symbols"))
+
+            return response.get("result", {}).get("list", [])
         except Exception as e:
             print(f"[BybitClient] ❌ Failed to fetch symbols: {e}")
             return []
+
+
         
     def get_price_step(self, symbol: str) -> float:
         if not self.client:
