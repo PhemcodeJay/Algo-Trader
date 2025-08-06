@@ -97,38 +97,25 @@ class BybitClient:
                 logger.warning(f"[BybitClient] ⚠️ Test connection failed: {e}")
 
     def _load_virtual_wallet(self):
-        def safe_float(val):
-            try:
-                return float(val)
-            except (TypeError, ValueError):
-                return 0.0
-
         try:
             with open("capital.json", "r") as f:
-                data = json.load(f)
-                virtual = data.get("virtual", {})
-                usdt_equity = safe_float(virtual.get("usdt") or virtual.get("USDT", 100.0))
-                self.virtual_wallet = {
-                    "USDT": {
-                        "equity": usdt_equity,
-                        "available_balance": usdt_equity  # you can separate if needed
-                    }
-                }
-                logger.info("[BybitClient] ✅ Loaded virtual wallet from capital.json")
+                self.virtual_wallet = json.load(f)
+            logger.info("[BybitClient] ✅ Loaded virtual wallet from capital.json")
 
         except (FileNotFoundError, json.JSONDecodeError) as e:
             logger.warning("[BybitClient] ⚠️ Could not load capital.json: %s", e)
+            # Fallback to default balance
             self.virtual_wallet = {
                 "USDT": {
                     "equity": 100.0,
                     "available_balance": 100.0
                 }
             }
-            logger.info("[BybitClient] 💰 Initialized default virtual wallet")
             self._save_virtual_wallet()
+            logger.info("[BybitClient] 💰 Initialized default virtual wallet")
 
         except Exception as e:
-            logger.exception("[BybitClient] ❌ Unexpected error loading virtual wallet: %s", e)
+            logger.exception("[BybitClient] ❌ Unexpected error loading virtual wallet")
             self.virtual_wallet = {
                 "USDT": {
                     "equity": 0.0,
@@ -136,25 +123,21 @@ class BybitClient:
                 }
             }
 
-
-
     def _send_request(self, method: str, params: Optional[Dict[str, Any]] = None) -> Tuple[Dict[str, Any], timedelta, CaseInsensitiveDict]:
         if self.client is None:
             logger.error("[BybitClient] ❌ Client not initialized.")
             return {}, timedelta(), CaseInsensitiveDict()
 
-        # Handle known method routing properly
-        method_func = None
-
         try:
-            if method in {"get_orders", "get_positions", "get_wallet_balance"}:
-                method_func = getattr(self.client, method, None)
-            elif method == "get_order":  # Only if you know client.order exists
-                # Caution: `self.client.order` is invalid for pybit.HTTP
-                logger.error("[BybitClient] ❌ 'order' attribute does not exist on client.")
-                return {}, timedelta(), CaseInsensitiveDict()
-            else:
-                method_func = getattr(self.client, method, None)
+            # ✅ Map allowed methods to actual client functions
+            allowed_methods = {
+                "get_open_orders": self.client.get_open_orders,  # ✅ Added support for get_open_orders
+                "get_positions": self.client.get_positions,
+                "get_wallet_balance": self.client.get_wallet_balance,
+                # Add more mappings here if needed
+            }
+
+            method_func = allowed_methods.get(method)
 
             if not callable(method_func):
                 logger.error(f"[BybitClient] ❌ Method '{method}' not found or not callable on client.")
@@ -181,7 +164,6 @@ class BybitClient:
         except Exception as e:
             logger.exception(f"[BybitClient] ❌ Exception during '{method}' call: {e}")
             return {}, timedelta(), CaseInsensitiveDict()
-
 
     def get_kline(self, symbol: str, interval: str, limit: int = 200) -> Dict[str, Any]:
         response = self._send_request("kline", {"symbol": symbol, "interval": interval, "limit": limit})
@@ -282,18 +264,18 @@ class BybitClient:
                     "currency": "USDT"
                 }
 
-
     
     def calculate_margin(self, qty: float, price: float, leverage: float) -> float:
         return round((qty * price) / leverage, 2)
     
     def _save_virtual_wallet(self):
         try:
-            with open("capital.json", "w") as f:
+            with open("capital.json", "w", encoding="utf-8") as f:
                 json.dump(self.virtual_wallet, f, indent=4)
             logger.info("[BybitClient] 💾 Virtual wallet saved to capital.json")
         except Exception as e:
             logger.exception("[BybitClient] ❌ Failed to save virtual wallet: %s", e)
+
 
 
     def get_qty_step(self, symbol: str) -> float:
@@ -673,7 +655,7 @@ class BybitClient:
         category: str = "linear"
     ) -> Tuple[Dict[str, Any], timedelta, CaseInsensitiveDict]:
         return self._send_request(
-            "get_orders",  # This should match the actual pybit method
+            "get_open_orders",  # ✅ Correct pybit Unified Trading method name
             {
                 "symbol": symbol,
                 "category": category
