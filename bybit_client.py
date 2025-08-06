@@ -7,10 +7,13 @@ from typing import Any, Dict, Optional, Tuple, Union, List, cast
 import requests
 from requests.structures import CaseInsensitiveDict
 from db import db_manager
-
+from typing import Optional, TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
+
+if TYPE_CHECKING:
+    from pybit.unified_trading import HTTP
 
 def extract_response(response: Union[Dict[str, Any], Tuple[Any, ...]]) -> Dict[str, Any]:
     if isinstance(response, tuple):
@@ -26,56 +29,59 @@ def extract_response(response: Union[Dict[str, Any], Tuple[Any, ...]]) -> Dict[s
 
 class BybitClient:
     def __init__(self):
-        self.use_real = os.getenv("USE_REAL_TRADING", "").strip().lower() in ("1", "true", "yes")
-        self.use_testnet = os.getenv("BYBIT_TESTNET", "").strip().lower() in ("1", "true", "yes")
-        
-        # ✅ Automatically infer virtual mode
+        # 💡 Trading mode
+        self.use_real: bool = os.getenv("USE_REAL_TRADING", "").strip().lower() in ("1", "true", "yes")
+        self.use_testnet: bool = os.getenv("BYBIT_TESTNET", "").strip().lower() in ("1", "true", "yes")
         self.virtual: bool = not self.use_real and not self.use_testnet
 
+        # ❌ Prevent dual mode conflict
         if self.use_real and self.use_testnet:
             logger.error("❌ Conflict: Both USE_REAL_TRADING and BYBIT_TESTNET are set. Enable only one.")
             self.client = None
             return
 
+        # ✅ Basic attributes
         self.db = db_manager
         self._virtual_orders: List[Dict[str, Any]] = []
         self._virtual_positions: List[Dict[str, Any]] = []
         self.virtual_wallet: Dict[str, Any] = {}
         self.session = requests.Session()
-        self.client = None
+        self.client: Optional[HTTP] = None
         self.base_url = "https://api.bybit.com"
 
-        try:
-            from pybit.unified_trading import HTTP
-            self._HTTP = HTTP
-        except ImportError as e:
-            logger.error("❌ Pybit is not installed or failed to import: %s", e)
+        if HTTP is None:
+            logger.error("❌ Cannot initialize Bybit client: HTTP class not available.")
             return
 
+        # 🔑 Real Trading (Mainnet)
         if self.use_real:
             self.api_key = os.getenv("BYBIT_API_KEY", "")
             self.api_secret = os.getenv("BYBIT_API_SECRET", "")
-
             if not self.api_key or not self.api_secret:
                 logger.error("❌ BYBIT_API_KEY and/or BYBIT_API_SECRET not set.")
                 return
 
             try:
-                self.client = self._HTTP(
+                self.client = HTTP(
                     api_key=self.api_key,
                     api_secret=self.api_secret,
                     testnet=False
                 )
                 logger.info("[BybitClient] ✅ Live trading enabled (mainnet)")
             except Exception as e:
-                logger.exception("❌ Failed to initialize Bybit client: %s", e)
+                logger.exception("❌ Failed to initialize Bybit mainnet client: %s", e)
                 self.client = None
 
+        # 🧪 Testnet Trading
         elif self.use_testnet:
             self.api_key = os.getenv("BYBIT_TESTNET_API_KEY", "")
             self.api_secret = os.getenv("BYBIT_TESTNET_API_SECRET", "")
+            if not self.api_key or not self.api_secret:
+                logger.error("❌ BYBIT_TESTNET_API_KEY and/or BYBIT_TESTNET_API_SECRET not set.")
+                return
+
             try:
-                self.client = self._HTTP(
+                self.client = HTTP(
                     api_key=self.api_key,
                     api_secret=self.api_secret,
                     testnet=True
@@ -85,10 +91,12 @@ class BybitClient:
                 logger.exception("❌ Failed to initialize Bybit testnet client: %s", e)
                 self.client = None
 
+        # 💻 Virtual mode
         if self.virtual:
             logger.warning("⚠️ No trading mode specified. Defaulting to virtual mode.")
             self._load_virtual_wallet()
 
+        # 🔄 Connection test
         if self.client:
             try:
                 test_result = self.client.get_server_time()
@@ -129,14 +137,12 @@ class BybitClient:
             return {}, timedelta(), CaseInsensitiveDict()
 
         try:
-            # ✅ Map allowed methods to actual client functions
             allowed_methods = {
-                "get_open_orders": self.client.get_open_orders,  # ✅ Added support for get_open_orders
-                "get_positions": self.client.get_positions,
-                "get_wallet_balance": self.client.get_wallet_balance,
-                # Add more mappings here if needed
-            }
-
+            "get_orders": getattr(self.client, "get_orders", None),
+            "get_open_orders": getattr(self.client, "get_open_orders", None),
+            "get_positions": getattr(self.client, "get_positions", None),
+            "get_wallet_balance": getattr(self.client, "get_wallet_balance", None),
+        }
             method_func = allowed_methods.get(method)
 
             if not callable(method_func):
