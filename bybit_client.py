@@ -96,20 +96,32 @@ class BybitClient:
             except Exception as e:
                 logger.warning(f"[BybitClient] ⚠️ Test connection failed: {e}")
 
-
     def _load_virtual_wallet(self):
+        def safe_float(val):
+            try:
+                return float(val)
+            except (TypeError, ValueError):
+                return 0.0
+
         try:
             with open("capital.json", "r") as f:
-                self.virtual_wallet = json.load(f)
+                data = json.load(f)
+                virtual = data.get("virtual", {})
+                usdt_equity = safe_float(virtual.get("usdt") or virtual.get("USDT", 100.0))
+                self.virtual_wallet = {
+                    "USDT": {
+                        "equity": usdt_equity,
+                        "available_balance": usdt_equity  # you can separate if needed
+                    }
+                }
                 logger.info("[BybitClient] ✅ Loaded virtual wallet from capital.json")
 
         except (FileNotFoundError, json.JSONDecodeError) as e:
             logger.warning("[BybitClient] ⚠️ Could not load capital.json: %s", e)
-            # ✅ Fallback to default balance
             self.virtual_wallet = {
                 "USDT": {
-                    "equity": 1000.0,
-                    "available_balance": 1000.0
+                    "equity": 100.0,
+                    "available_balance": 100.0
                 }
             }
             logger.info("[BybitClient] 💰 Initialized default virtual wallet")
@@ -123,6 +135,7 @@ class BybitClient:
                     "available_balance": 0.0
                 }
             }
+
 
 
     def _send_request(self, method: str, params: Optional[Dict[str, Any]] = None) -> Tuple[Dict[str, Any], timedelta, CaseInsensitiveDict]:
@@ -190,6 +203,12 @@ class BybitClient:
         ]
 
     def wallet_balance(self, coin: str = "USDT") -> dict:
+        def safe_float(val):
+            try:
+                return float(val)
+            except (TypeError, ValueError):
+                return 0.0
+
         if self.use_real:
             # === Real trading: Call Bybit Unified Trading Wallet API ===
             response, _, _ = self._send_request("get_wallet_balance", {
@@ -201,7 +220,6 @@ class BybitClient:
                 logger.warning("[BybitClient] ⚠️ No wallet balance response received.")
                 return {"capital": 0.0, "currency": coin}
 
-            # ✅ response is already the 'result' from _send_request
             balance_info = response.get("list", [])
             if not balance_info:
                 logger.warning("[BybitClient] ⚠️ Empty 'list' in wallet balance response.")
@@ -210,8 +228,8 @@ class BybitClient:
             coin_list = balance_info[0].get("coin", [])
             for c in coin_list:
                 if c.get("coin") == coin:
-                    available = c.get("availableToWithdraw", 0.0)
-                    return {"capital": float(available), "currency": coin}
+                    available = safe_float(c.get("availableToWithdraw"))
+                    return {"capital": available, "currency": coin}
 
             logger.warning(f"[BybitClient] ⚠️ Coin '{coin}' not found in wallet balance.")
             return {"capital": 0.0, "currency": coin}
@@ -223,11 +241,12 @@ class BybitClient:
                     capital_data = json.load(f)
 
                 virtual = capital_data.get("virtual", {})
-                capital = float(virtual.get("available", 0.0) + virtual.get("used", 0.0))
-                currency = virtual.get("currency", coin)
+                available = safe_float(virtual.get("available_balance"))  # or "usdt"
+                equity = safe_float(virtual.get("equity"))
+                currency = coin  # you could also read from file if defined
 
                 return {
-                    "capital": capital,
+                    "capital": available or equity,  # prioritize available_balance
                     "currency": currency
                 }
 
@@ -648,11 +667,14 @@ class BybitClient:
     def get_open_positions(self) -> List[Dict[str, Any]]:
         return [pos for pos in self._virtual_positions if pos["status"] == "open"]
     
-    def get_orders(self, order_id: str, symbol: str, category: str = "linear") -> Tuple[Dict[str, Any], timedelta, CaseInsensitiveDict]:
+    def get_open_orders(
+        self,
+        symbol: str,
+        category: str = "linear"
+    ) -> Tuple[Dict[str, Any], timedelta, CaseInsensitiveDict]:
         return self._send_request(
-            "get_open_orders",
+            "get_orders",  # This should match the actual pybit method
             {
-                "orderId": order_id,
                 "symbol": symbol,
                 "category": category
             }
