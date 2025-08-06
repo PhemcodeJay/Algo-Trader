@@ -10,6 +10,8 @@ from sqlalchemy.orm import (
     declarative_base, sessionmaker, Session, Mapped, mapped_column
 )
 
+from sqlalchemy import update
+
 # Load .env file if it exists
 load_dotenv()
 
@@ -69,6 +71,7 @@ class Trade(Base):
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     status: Mapped[str] = mapped_column(String)
     order_id: Mapped[str] = mapped_column(String)
+    unrealized_pnl: Mapped[float] = mapped_column(Float, default=0.0)
     virtual: Mapped[bool] = mapped_column(Boolean, default=True)
 
     def to_dict(self) -> Dict:
@@ -87,6 +90,7 @@ class Trade(Base):
             "timestamp": self.timestamp.strftime("%Y-%m-%d %H:%M:%S") if self.timestamp else None,
             "status": self.status,
             "order_id": self.order_id,
+            "unrealized_pnl": self.unrealized_pnl,
             "virtual": self.virtual,
         }
 
@@ -99,6 +103,7 @@ class Portfolio(Base):
     value: Mapped[float] = mapped_column(Float)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     capital: Mapped[float] = mapped_column(Float, nullable=False, default=100.0)
+    unrealized_pnl: Mapped[float] = mapped_column(Float, default=0.0)
 
     def to_dict(self) -> Dict:
         return {
@@ -109,6 +114,7 @@ class Portfolio(Base):
             "value": self.value,
             "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else None,
             "capital": self.capital,
+            "unrealized_pnl": self.unrealized_pnl,
         }
 
 class SystemSetting(Base):
@@ -161,7 +167,7 @@ class DatabaseManager:
             "TOP_N_SIGNALS": 5,
             "MAX_LOSS_PCT": -15.0,
             "TP_PERCENT": 0.30,
-            "SL_PERCENT": 0.15,
+            "SL_PERCENT": 0.10,
             "LEVERAGE": 20,
             "RISK_PER_TRADE": 0.01,
         }
@@ -221,6 +227,27 @@ class DatabaseManager:
                 trade.pnl = pnl
                 trade.status = 'closed'
                 session.commit()
+
+    def update_trade_unrealized_pnl(self, order_id: str, unrealized_pnl: float) -> None:
+        with self.Session() as session:
+            session.execute(
+                update(Trade)
+                .where(Trade.order_id == order_id)
+                .values(unrealized_pnl=unrealized_pnl, updated_at=datetime.utcnow())
+            )
+            session.commit()
+
+    def update_portfolio_unrealized_pnl(self, symbol: str, unrealized_pnl: float, is_virtual: bool = False) -> None:
+        with self.Session() as session:
+            session.execute(
+                update(Portfolio)
+                .where(
+                    Portfolio.symbol == symbol,
+                    Portfolio.is_virtual == is_virtual
+                )
+                .values(unrealized_pnl=unrealized_pnl, updated_at=datetime.utcnow())
+            )
+            session.commit()
 
     def update_portfolio_balance(self, symbol: str, qty: float, avg_price: float, value: float):
         with self.get_session() as session:

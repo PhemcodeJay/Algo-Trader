@@ -1,7 +1,6 @@
 import os
 import json
 import logging
-from symtable import Symbol
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, Tuple, Union, List, cast
@@ -9,17 +8,9 @@ import requests
 from requests.structures import CaseInsensitiveDict
 from db import db_manager
 
-# Create the logger instance
+
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)  # Set minimum log level
-
-# Prevent duplicate handlers if this is called multiple times
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-
+logging.basicConfig(level=logging.INFO)
 
 def extract_response(response: Union[Dict[str, Any], Tuple[Any, ...]]) -> Dict[str, Any]:
     if isinstance(response, tuple):
@@ -37,21 +28,22 @@ class BybitClient:
     def __init__(self):
         self.use_real = os.getenv("USE_REAL_TRADING", "").strip().lower() in ("1", "true", "yes")
         self.use_testnet = os.getenv("BYBIT_TESTNET", "").strip().lower() in ("1", "true", "yes")
+        
+        # ✅ Automatically infer virtual mode
+        self.virtual: bool = not self.use_real and not self.use_testnet
 
         if self.use_real and self.use_testnet:
             logger.error("❌ Conflict: Both USE_REAL_TRADING and BYBIT_TESTNET are set. Enable only one.")
             self.client = None
             return
-         
-        self.logger = logging.getLogger(__name__) 
-        self.logger.setLevel(logging.INFO)
+
+        self.db = db_manager
         self._virtual_orders: List[Dict[str, Any]] = []
         self._virtual_positions: List[Dict[str, Any]] = []
+        self.virtual_wallet: Dict[str, Any] = {}
         self.session = requests.Session()
-        self.client = None  # initialize to None
+        self.client = None
         self.base_url = "https://api.bybit.com"
-        self.virtual_wallet = {}
-        self._load_virtual_wallet()
 
         try:
             from pybit.unified_trading import HTTP
@@ -72,7 +64,7 @@ class BybitClient:
                 self.client = self._HTTP(
                     api_key=self.api_key,
                     api_secret=self.api_secret,
-                    testnet=False  # ✅ no 'endpoint' parameter needed
+                    testnet=False
                 )
                 logger.info("[BybitClient] ✅ Live trading enabled (mainnet)")
             except Exception as e:
@@ -93,11 +85,10 @@ class BybitClient:
                 logger.exception("❌ Failed to initialize Bybit testnet client: %s", e)
                 self.client = None
 
-        else:
+        if self.virtual:
             logger.warning("⚠️ No trading mode specified. Defaulting to virtual mode.")
             self._load_virtual_wallet()
 
-        # ✅ Optional sanity check
         if self.client:
             try:
                 test_result = self.client.get_server_time()
@@ -105,37 +96,34 @@ class BybitClient:
             except Exception as e:
                 logger.warning(f"[BybitClient] ⚠️ Test connection failed: {e}")
 
-    def _save_virtual_wallet(self):
-        try:
-            with open("capital.json", "w") as f:
-                json.dump(self.virtual_wallet, f, indent=4)
-                self.logger.info("[BybitClient] 💾 Saved virtual wallet to capital.json")
-        except Exception as e:
-            self.logger.exception("[BybitClient] ❌ Error saving virtual wallet: %s", e)
 
     def _load_virtual_wallet(self):
         try:
             with open("capital.json", "r") as f:
                 self.virtual_wallet = json.load(f)
-                self.logger.info("[BybitClient] ✅ Loaded virtual wallet from capital.json")
+                logger.info("[BybitClient] ✅ Loaded virtual wallet from capital.json")
+
         except (FileNotFoundError, json.JSONDecodeError) as e:
-            self.logger.warning("[BybitClient] ⚠️ Could not load capital.json: %s", e)
+            logger.warning("[BybitClient] ⚠️ Could not load capital.json: %s", e)
+            # ✅ Fallback to default balance
             self.virtual_wallet = {
                 "USDT": {
-                    "equity": 100.0,
-                    "available_balance": 100.0
+                    "equity": 1000.0,
+                    "available_balance": 1000.0
                 }
             }
-            self.logger.info("[BybitClient] 💰 Initialized default virtual wallet")
+            logger.info("[BybitClient] 💰 Initialized default virtual wallet")
             self._save_virtual_wallet()
+
         except Exception as e:
-            self.logger.exception("[BybitClient] ❌ Unexpected error loading virtual wallet: %s", e)
+            logger.exception("[BybitClient] ❌ Unexpected error loading virtual wallet: %s", e)
             self.virtual_wallet = {
                 "USDT": {
                     "equity": 0.0,
                     "available_balance": 0.0
                 }
             }
+
 
     def _send_request(self, method: str, params: Optional[Dict[str, Any]] = None) -> Tuple[Dict[str, Any], timedelta, CaseInsensitiveDict]:
         if self.client is None:
@@ -180,7 +168,6 @@ class BybitClient:
         except Exception as e:
             logger.exception(f"[BybitClient] ❌ Exception during '{method}' call: {e}")
             return {}, timedelta(), CaseInsensitiveDict()
-
 
 
     def get_kline(self, symbol: str, interval: str, limit: int = 200) -> Dict[str, Any]:
@@ -243,7 +230,7 @@ class BybitClient:
             except Exception as e:
                 logger.exception("[BybitClient] ❌ Failed to load virtual capital.")
                 return {"capital": 0.0, "currency": coin}
-            
+
     
     def get_wallet_balance(self) -> dict:
         if self.use_real:
@@ -272,48 +259,6 @@ class BybitClient:
                 }
 
 
-def update_usdt_capital(self) -> None:
-    try:
-        response: Dict[str, Any] = self.client.get_wallet_balance(accountType="UNIFIED")
-        result = response.get("result", {})
-        wallet_list = result.get("list", [])
-
-        if not wallet_list:
-            self.logger.warning("[BybitClient] ⚠️ Wallet list is empty in response.")
-            return
-
-        usdt_wallet = wallet_list[0]
-        coins = usdt_wallet.get("coin", [])
-
-        coin_data = next((coin for coin in coins if coin.get("coin") == "USDT"), None)
-        if not coin_data:
-            self.logger.warning("[BybitClient] ⚠️ Wallet balance for USDT not found.")
-            return
-
-        wallet_balance = float(coin_data.get("walletBalance", 0.0))
-        available_to_withdraw = float(coin_data.get("availableToWithdraw", 0.0))
-
-        capital_data = {
-            "capital": wallet_balance,
-            "available": available_to_withdraw,
-            "used": wallet_balance - available_to_withdraw,
-            "start_balance": self.capital.get("real", {}).get("start_balance", wallet_balance),
-            "currency": "USDT"
-        }
-
-        if "real" not in self.capital:
-            self.capital["real"] = {}
-
-        self.capital["real"].update(capital_data)
-        self.save_capital()
-        self.db.set_setting("real_balance", capital_data["capital"])
-
-        self.logger.info(f"[BybitClient] ✅ Synced real USDT balance: {capital_data}")
-
-    except Exception as e:
-        self.logger.error(f"[BybitClient] ❌ Failed to update USDT capital: {e}")
-
-    
     
     def calculate_margin(self, qty: float, price: float, leverage: float) -> float:
         return round((qty * price) / leverage, 2)
@@ -356,10 +301,9 @@ def update_usdt_capital(self) -> None:
         close_on_trigger: bool = False,
         order_link_id: Optional[str] = None
     ) -> Dict[str, Any]:
-        # ================================
-        # ✅ REAL TRADING MODE
-        # ================================
+
         if self.use_real and self.client:
+            # ✅ REAL TRADING LOGIC
             if order_link_id:
                 try:
                     open_orders = self._send_request("get_open_orders", {"symbol": symbol})
@@ -369,7 +313,7 @@ def update_usdt_capital(self) -> None:
                         None
                     )
                     if matched_order:
-                        amend_params = {
+                        amend_params: Dict[str, Any] = {
                             "symbol": symbol,
                             "order_link_id": order_link_id,
                             "qty": qty
@@ -427,7 +371,7 @@ def update_usdt_capital(self) -> None:
             try:
                 time.sleep(0.5)
                 status_resp = self._send_request("get_orders", {"category": "linear", "orderId": order_id})
-                status_data = extract_response(status_resp)
+                status_data, _, _ = status_resp
                 orders_list = status_data.get("list", [])
                 if not orders_list:
                     logger.warning("[Real] ❌ No orders found in order status response.")
@@ -443,9 +387,11 @@ def update_usdt_capital(self) -> None:
 
                 if order_status in ["New", "PartiallyFilled", "Filled"]:
                     logger.info(f"[Real] ✅ Order confirmed. Placing TP/SL limit orders...")
+
                     try:
                         raw_price = result.get("price")
-                        entry_price = float(raw_price) if raw_price is not None else float(price or 0.0)
+                        # Ensure raw_price is a float or fallback to provided price
+                        entry_price: float = float(raw_price) if raw_price is not None else float(price) if price is not None else 0.0
                         self.place_tp_sl_limit_orders(
                             symbol=symbol,
                             side=side,
@@ -464,6 +410,7 @@ def update_usdt_capital(self) -> None:
                         "status": order_status,
                         "response": result
                     }
+
                 else:
                     logger.warning(f"[Real] ❌ Order not active: {order_info}")
                     return {
@@ -483,7 +430,7 @@ def update_usdt_capital(self) -> None:
                 }
 
         # ============================
-        # ✅ VIRTUAL TRADING MODE
+        # ✅ VIRTUAL TRADING LOGIC
         # ============================
         price_used = price or 1.0
         leverage = 20
@@ -541,7 +488,8 @@ def update_usdt_capital(self) -> None:
 
         order_id = f"virtual_{int(time.time() * 1000)}"
         create_time = datetime.utcnow()
-        virtual_order = {
+
+        self._virtual_orders.append({
             "order_id": order_id,
             "symbol": symbol,
             "side": side,
@@ -552,8 +500,7 @@ def update_usdt_capital(self) -> None:
             "margin": margin,
             "leverage": leverage,
             "create_time": create_time
-        }
-        self._virtual_orders.append(virtual_order)
+        })
 
         self._virtual_positions.append({
             "symbol": symbol,
@@ -569,16 +516,18 @@ def update_usdt_capital(self) -> None:
         self.place_tp_sl_limit_orders(
             symbol=symbol,
             side=side,
-            entry_price=price_used,
+            entry_price=price or 1.0,
             qty=qty,
             order_id=order_id
         )
+
+        logger.info(f"[Virtual] ✅ TP/SL placed for {symbol}")
 
         trade_data = {
             "symbol": symbol,
             "side": side,
             "qty": qty,
-            "entry_price": price_used,
+            "entry_price": price or 1.0,
             "leverage": leverage,
             "margin_usdt": margin,
             "order_id": order_id,
@@ -588,12 +537,8 @@ def update_usdt_capital(self) -> None:
         }
         db_manager.add_trade(trade_data)
 
-        return {
-            "success": True,
-            "message": "Virtual order placed successfully",
-            "order_id": order_id,
-            "order": virtual_order
-        }
+        return {"message": "Virtual order placed", "order_id": order_id}
+
 
     def place_tp_sl_limit_orders(
         self,
@@ -613,6 +558,7 @@ def update_usdt_capital(self) -> None:
         formatted_qty = f"{qty:.3f}"
 
         if self.use_real:
+            # ✅ REAL MODE
             tp_order = {
                 "category": "linear",
                 "symbol": symbol,
@@ -654,6 +600,7 @@ def update_usdt_capital(self) -> None:
                 logger.error(f"[Real] ❌ Failed to place SL order: {e}")
 
         else:
+            # ✅ VIRTUAL MODE
             if not order_id:
                 order_id = f"virtual_{int(time.time() * 1000)}"
 
@@ -684,22 +631,21 @@ def update_usdt_capital(self) -> None:
             }
 
             self._virtual_orders.extend([tp_order, sl_order])
-            logger.info(f"[Virtual] ✅ TP @ {tp_price}, SL @ {sl_price} added for {Symbol}")
+            logger.info(f"[Virtual] ✅ TP @ {tp_price}, SL @ {sl_price} added for {symbol}")
 
                 
     def get_open_positions(self) -> List[Dict[str, Any]]:
         return [pos for pos in self._virtual_positions if pos["status"] == "open"]
     
-    def get_orders(self, order_id: str, symbol: str, category: str = "linear") -> dict:
+    def get_orders(self, order_id: str, symbol: str, category: str = "linear") -> Tuple[Dict[str, Any], timedelta, CaseInsensitiveDict]:
         return self._send_request(
-                "get_open_orders",  # ✅ Correct method name for Bybit V5 API
-                {
-                    "orderId": order_id,       # ✅ Matches V5 API spec
-                    "symbol": symbol,
-                    "category": category
-                }
-            )
-
+            "get_open_orders",
+            {
+                "orderId": order_id,
+                "symbol": symbol,
+                "category": category
+            }
+        )
 
     def get_closed_positions(self) -> List[Dict[str, Any]]:
         return [pos for pos in self._virtual_positions if pos["status"] == "closed"]
@@ -778,19 +724,17 @@ def update_usdt_capital(self) -> None:
                 pos["fill_time"] = datetime.utcnow()
                 logger.info(f"[Virtual] Position for {pos['symbol']} marked as active.")
 
-    def get_symbols(self, category="linear"):
+    def get_symbols(self):
         try:
-            response = self.session.get_instruments_info(category=category)
-
-            if response.get("retCode") != 0:
-                raise Exception(response.get("retMsg", "Failed to fetch symbols"))
-
-            return response.get("result", {}).get("list", [])
+            url = self.base_url + "/v5/market/instruments-info"
+            params = {"category": "linear"}
+            response = self.session.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
+            return data.get("result", {}).get("list", [])
         except Exception as e:
             print(f"[BybitClient] ❌ Failed to fetch symbols: {e}")
             return []
-
-
         
     def get_price_step(self, symbol: str) -> float:
         if not self.client:
@@ -809,29 +753,48 @@ def update_usdt_capital(self) -> None:
             logger.error(f"Failed to fetch price step for {symbol}: {e}")
         return 0.01  # fallback default
 
-    def sync_trade_to_db(self, trade_data):
-        try:
-            # Save trade
-            self.db.add_trade(trade_data)
-            self.logger.info(f"[BybitClient] ✅ Trade saved to DB: {trade_data['symbol']}")
+    def get_ticker(self, symbol: str) -> Optional[Dict[str, Any]]:
+        result, _, _ = self._send_request("get_ticker", {"symbol": symbol, "category": "linear"})
+        return result
 
-            # Update capital
-            pnl = trade_data.get("realized_pnl", 0)
-            mode = trade_data.get("mode", "real")
-            self.capital[mode]["capital"] += pnl
-            self.capital[mode]["available"] += pnl
-            self.save_capital()
+    def update_unrealized_pnl(self):
+        if self.virtual:
+            # === Virtual Trades ===
+            open_trades = self.db.get_open_virtual_trades()
+            for trade in open_trades:
+                symbol = trade["symbol"]
+                entry_price = float(trade["entry_price"])
+                qty = float(trade["qty"])
+                side = trade["side"].lower()
 
-            # Update DB and portfolio
-            self.db.set_setting(f"{mode}_balance", self.capital[mode]["capital"])
-            self.db.update_portfolio(trade_data["symbol"], mode=mode)
+                ticker = self.get_ticker(symbol)
+                if not ticker:
+                    continue
 
-        except Exception as e:
-            self.logger.error(f"[BybitClient] ❌ Failed to sync trade: {e}")
-  
-    def save_capital(self):
-        with open("capital.json", "w") as f:
-            json.dump(self.capital, f, indent=4)
+                last_price = float(ticker["lastPrice"])
+                pnl = (last_price - entry_price) * qty if side == "buy" else (entry_price - last_price) * qty
+
+                # Update trade and portfolio
+                self.db.update_trade_unrealized_pnl(order_id=trade["order_id"], unrealized_pnl=pnl)
+                self.db.update_portfolio_unrealized_pnl(symbol, pnl, is_virtual=True)
+
+        else:
+            # === Real Positions ===
+            positions = self.get_open_positions()
+            for pos in positions:
+                symbol = pos["symbol"]
+                qty = float(pos["size"])
+                entry_price = float(pos["entry_price"])
+                mark_price = float(pos["mark_price"])
+                side = pos["side"].lower()
+
+                pnl = (mark_price - entry_price) * qty if side == "buy" else (entry_price - mark_price) * qty
+
+                # Update portfolio (optional: match order_id to trade)
+                self.db.update_portfolio_unrealized_pnl(symbol, pnl, is_virtual=False)
+
+                # Optional: if you store real trades by order_id
+                self.db.update_trade_unrealized_pnl(order_id=pos["order_id"], unrealized_pnl=pnl)
 
 
 # Export instance
