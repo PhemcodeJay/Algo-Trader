@@ -8,6 +8,8 @@ import requests
 from requests.structures import CaseInsensitiveDict
 from db import db_manager
 from typing import Optional, TYPE_CHECKING
+from pybit.unified_trading import HTTP
+
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -142,7 +144,12 @@ class BybitClient:
             "get_open_orders": getattr(self.client, "get_open_orders", None),
             "get_positions": getattr(self.client, "get_positions", None),
             "get_wallet_balance": getattr(self.client, "get_wallet_balance", None),
+            "place_order": getattr(self.client, "place_order", None),  # 🔥 Add this
+            "amend_active_order": getattr(self.client, "amend_active_order", None),  # 🔥 And this
+            "get_ticker": getattr(self.client, "get_ticker", None),
+            "get_instruments_info": getattr(self.client, "get_instruments_info", None)
         }
+
             method_func = allowed_methods.get(method)
 
             if not callable(method_func):
