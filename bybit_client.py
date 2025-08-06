@@ -191,9 +191,9 @@ class BybitClient:
 
     def wallet_balance(self, coin: str = "USDT") -> dict:
         if self.use_real:
-            # === Real trading: Call Bybit API with accountType ===
+            # === Real trading: Call Bybit Unified Trading Wallet API ===
             response, _, _ = self._send_request("get_wallet_balance", {
-                "accountType": "UNIFIED",   # or "CONTRACT" / "SPOT" depending on your setup
+                "accountType": "UNIFIED",
                 "coin": coin
             })
 
@@ -201,15 +201,19 @@ class BybitClient:
                 logger.warning("[BybitClient] ⚠️ No wallet balance response received.")
                 return {"capital": 0.0, "currency": coin}
 
-            balance_info = response.get("result", {}).get("list", [])
-            if balance_info:
-                coin_balances = balance_info[0].get("coin", [])
-                for c in coin_balances:
-                    if c.get("coin") == coin:
-                        available = c.get("availableToWithdraw", 0.0)
-                        return {"capital": float(available), "currency": coin}
+            # ✅ response is already the 'result' from _send_request
+            balance_info = response.get("list", [])
+            if not balance_info:
+                logger.warning("[BybitClient] ⚠️ Empty 'list' in wallet balance response.")
+                return {"capital": 0.0, "currency": coin}
 
-            logger.warning("[BybitClient] ⚠️ Wallet balance for coin not found.")
+            coin_list = balance_info[0].get("coin", [])
+            for c in coin_list:
+                if c.get("coin") == coin:
+                    available = c.get("availableToWithdraw", 0.0)
+                    return {"capital": float(available), "currency": coin}
+
+            logger.warning(f"[BybitClient] ⚠️ Coin '{coin}' not found in wallet balance.")
             return {"capital": 0.0, "currency": coin}
 
         else:
@@ -230,6 +234,7 @@ class BybitClient:
             except Exception as e:
                 logger.exception("[BybitClient] ❌ Failed to load virtual capital.")
                 return {"capital": 0.0, "currency": coin}
+
 
     
     def get_wallet_balance(self) -> dict:
@@ -385,23 +390,27 @@ class BybitClient:
                 order_info = orders_list[0]
                 order_status = order_info.get("orderStatus", "UNKNOWN")
 
-                if order_status in ["New", "PartiallyFilled", "Filled"]:
+                if order_status in ["Filled", "PartiallyFilled", "New"]:
                     logger.info(f"[Real] ✅ Order confirmed. Placing TP/SL limit orders...")
 
                     try:
                         raw_price = result.get("price")
-                        # Ensure raw_price is a float or fallback to provided price
                         entry_price: float = float(raw_price) if raw_price is not None else float(price) if price is not None else 0.0
-                        self.place_tp_sl_limit_orders(
-                            symbol=symbol,
-                            side=side,
-                            entry_price=entry_price,
-                            qty=qty,
-                            order_link_id=order_link_id,
-                            order_id=order_id
-                        )
+
+                        # Only place TP/SL if at least partially filled
+                        if order_status in ["PartiallyFilled", "Filled"]:
+                            self.place_tp_sl_limit_orders(
+                                symbol=symbol,
+                                side=side,
+                                entry_price=entry_price,
+                                qty=qty,
+                                order_link_id=order_link_id,
+                                order_id=order_id
+                            )
+
                     except Exception as e:
                         logger.error(f"[TP/SL] ❌ Failed to place TP/SL: {e}")
+
 
                     return {
                         "success": True,
@@ -549,16 +558,18 @@ class BybitClient:
         order_link_id: Optional[str] = None,
         order_id: Optional[str] = None
     ):
-        tp_multiplier = 1.30  # +30%
-        sl_multiplier = 0.85  # -15%
+        tp_multiplier = 1.30  # +30% TP
+        sl_multiplier = 0.90  # -10% SL (previously 0.85, now corrected)
 
         tp_price = round(entry_price * tp_multiplier, 4)
         sl_price = round(entry_price * sl_multiplier, 4)
         opposite_side = "Sell" if side == "Buy" else "Buy"
-        formatted_qty = f"{qty:.3f}"
+
+        qty_step = self.get_qty_step(symbol)
+        precision = str(qty_step)[::-1].find('.')
+        formatted_qty = f"{round(qty, precision):.{precision}f}"
 
         if self.use_real:
-            # ✅ REAL MODE
             tp_order = {
                 "category": "linear",
                 "symbol": symbol,
